@@ -176,5 +176,5 @@ gantt
 - [x] Q-2 (железо): CPU-only, i7-1165G7 / 16 ГБ RAM — роли моделей и NFR скорректированы, [01-requirements.md §4.2](01-requirements.md)
 - [ ] Согласованы решения ADR-1…ADR-10 — [02-architecture.md §8](02-architecture.md)
 - [ ] Подтверждены пути к документам и Obsidian (Q-3) — можно позже, к S3/S4
-- [ ] Создан Telegram-бот (@BotFather), токен в `local.yaml`
-- [ ] Sprint 0 начат
+- [ ] Создан Telegram-бот (@BotFather), токен в `local.yaml` — нужен к Sprint 1
+- [x] Sprint 0 завершён (2026-07-17): скелет платформы, echo-диалог через Router, CI зелёный

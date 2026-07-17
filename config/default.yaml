@@ -1,0 +1,19 @@
+# Полный конфиг с дефолтами (в git). Переопределения — в config/local.yaml
+# (не в git) либо переменными окружения: SBA__SECTION__KEY, напр. SBA__LOGGING__LEVEL=DEBUG.
+
+app:
+  data_dir: ./data
+  timezone: Europe/Moscow
+
+logging:
+  level: INFO
+  format: console        # console | json
+
+session:
+  idle_timeout_minutes: 60
+
+channels:
+  cli:
+    enabled: true
+  telegram:
+    enabled: false       # Sprint 1

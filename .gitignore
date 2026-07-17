@@ -1,0 +1,13 @@
+# состояние приложения
+data/
+config/local.yaml
+
+# python
+__pycache__/
+*.pyc
+.venv/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

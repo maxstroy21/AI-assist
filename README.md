@@ -56,6 +56,23 @@
 - [x] Этап 5 — описание сервисов
 - [x] Этап 6 — потоки обработки
 - [x] Этапы 7–9 — итерации и roadmap
-- [ ] Согласование архитектуры с владельцем ← **вы здесь**
-- [ ] Sprint 0 — скелет проекта
-- [ ] Sprint 1 — Telegram + локальная LLM
+- [x] Согласование архитектуры с владельцем (среда: Ollama, CPU-only — см. docs/01-requirements.md §4)
+- [x] Sprint 0 — скелет проекта (конфиг, логи, шина событий, Router, SQLite, REPL, CI)
+- [ ] Sprint 1 — Telegram + локальная LLM ← **вы здесь**
+
+## Запуск (разработка)
+
+```bash
+# один раз: окружение
+uv venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
+uv pip install -e ".[dev]"
+
+# консольный канал (echo до Sprint 1)
+python -m sba
+
+# проверки — те же, что в CI
+ruff check . && mypy && lint-imports && pytest -q
+```
+
+Настройки: `config/default.yaml` (в git) переопределяются файлом `config/local.yaml`
+(не в git) и переменными окружения вида `SBA__LOGGING__LEVEL=DEBUG`.

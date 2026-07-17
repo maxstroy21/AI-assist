@@ -1,0 +1,76 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sba"
+version = "0.1.0"
+description = "Second Brain Agent — персональный локальный AI-ассистент"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.7",
+    "structlog>=24.1",
+    "aiosqlite>=0.20",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "import-linter>=2.0",
+    "types-PyYAML",
+]
+
+[project.scripts]
+sba = "sba.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sba"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "ASYNC", "RUF"]
+# RUF001-003: «неоднозначный юникод» — проект намеренно русскоязычный
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+mypy_path = "src"
+packages = ["sba"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+# ── Границы модулей (архитектура: docs/03-project-structure.md) ──────────────
+[tool.importlinter]
+root_package = "sba"
+
+[[tool.importlinter.contracts]]
+name = "Ядро не знает о каналах"
+type = "forbidden"
+source_modules = ["sba.core"]
+forbidden_modules = ["sba.channels"]
+
+[[tool.importlinter.contracts]]
+name = "Каналы не трогают LLM напрямую"
+type = "forbidden"
+source_modules = ["sba.channels"]
+forbidden_modules = ["sba.llm"]
+
+[[tool.importlinter.contracts]]
+name = "Инфраструктура не содержит предметной логики"
+type = "forbidden"
+source_modules = ["sba.infra"]
+forbidden_modules = ["sba.core", "sba.channels", "sba.llm"]
