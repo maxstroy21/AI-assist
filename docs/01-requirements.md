@@ -218,10 +218,12 @@ runtimes:
     api_key: ollama          # заглушка, Ollama не проверяет
 
 roles:
-  chat:       { runtime: ollama, model: mistral,  # кандидат: qwen2.5:7b-instruct
-                temperature: 0.7, keep_alive: 30m }
-  extraction: { runtime: ollama, model: mistral, temperature: 0.0 }
-  summarize:  { runtime: ollama, model: mistral, temperature: 0.3 }
+  # 2026-07-17: среда проверена — qwen2.5:7b-instruct скачан и назначен основной
+  # моделью диалога (лучший русский среди 7B); mistral остаётся запасным вариантом.
+  chat:       { runtime: ollama, model: "qwen2.5:7b-instruct",
+                temperature: 0.7, keep_alive: 60m }
+  extraction: { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.0 }  # ollama pull qwen2.5:3b-instruct
+  summarize:  { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }
   embedding:  { runtime: inprocess, model: BAAI/bge-m3 }
   rerank:     { runtime: inprocess, model: BAAI/bge-reranker-v2-m3 }
   stt:        { runtime: inprocess, model: faster-whisper-small }
