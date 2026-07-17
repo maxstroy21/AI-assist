@@ -27,7 +27,7 @@
 | **Цель** | Разговаривать со своей LLM из Telegram |
 | **Реализуется** | LLM Gateway (OpenAI-совм. провайдер, роли, retry, streaming), Telegram Gateway (whitelist, текст, разбиение длинных ответов), Agent Orchestrator v1 (без тулов: контекст = system + история), Context Builder v1, сервис-режим (NSSM/systemd) |
 | **Критерии готовности** | Диалог в TG с историей в рамках сессии; чужой user_id игнорируется; убийство процесса → авто-рестарт → диалог продолжается; смена рантайма/модели — только конфиг (проверить на 2 рантаймах) |
-| **Риски** | **Q-1/Q-2** (рантайм и железо) нужны здесь; слабая модель → заложить fallback JSON-режим уже сейчас |
+| **Риски** | Q-1 закрыт (Ollama + mistral 7B, см. 01-requirements §4.1); остаётся **Q-2** (железо); mistral 7B слаб в русском → сразу сравнить с `qwen2.5:7b-instruct`; заложить fallback JSON-режим уже сейчас |
 | **Объём** | ⏱ 5–7 |
 
 ## Sprint 2 — Tool Calling + первые инструменты + аудит
@@ -172,7 +172,8 @@ gantt
 
 ## Чек-лист старта реализации
 
-- [ ] Получены ответы на Q-1, Q-2 (рантайм, железо) — [01-requirements.md §4](01-requirements.md)
+- [x] Q-1 (рантайм): Ollama + mistral 7B, `http://localhost:11434/v1` — [01-requirements.md §4.1](01-requirements.md)
+- [ ] Q-2 (железо: GPU/VRAM/RAM) — [01-requirements.md §4](01-requirements.md)
 - [ ] Согласованы решения ADR-1…ADR-10 — [02-architecture.md §8](02-architecture.md)
 - [ ] Подтверждены пути к документам и Obsidian (Q-3) — можно позже, к S3/S4
 - [ ] Создан Telegram-бот (@BotFather), токен в `local.yaml`
