@@ -11,7 +11,8 @@ def test_app_starts_and_echoes(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "default.yaml").write_text(
-        f"app:\n  data_dir: {tmp_path / 'data'}\n", encoding="utf-8"
+        f"app:\n  data_dir: {tmp_path / 'data'}\nagent:\n  processor: echo\n",
+        encoding="utf-8",
     )
     proc = subprocess.run(
         [sys.executable, "-m", "sba", "--config-dir", str(config_dir)],

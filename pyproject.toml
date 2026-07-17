@@ -13,6 +13,8 @@ dependencies = [
     "aiosqlite>=0.20",
     "PyYAML>=6.0",
     "tzdata>=2024.1",  # база часовых поясов IANA: в Windows нет системной
+    "httpx>=0.27",
+    "aiogram>=3.10",
 ]
 
 [project.optional-dependencies]

@@ -59,15 +59,28 @@ class ChannelToggle(_Strict):
     enabled: bool = False
 
 
+class TelegramChannelConfig(_Strict):
+    enabled: bool = False
+    token: str = ""
+    allowed_user_ids: list[int] = []
+
+
+class AgentConfig(_Strict):
+    processor: Literal["llm", "echo"] = "llm"
+    history_max_messages: int = 16
+    history_budget_chars: int = 4000
+
+
 class ChannelsConfig(_Strict):
     cli: ChannelToggle = ChannelToggle(enabled=True)
-    telegram: ChannelToggle = ChannelToggle(enabled=False)
+    telegram: TelegramChannelConfig = TelegramChannelConfig()
 
 
 class Config(_Strict):
     app: AppConfig = AppConfig()
     logging: LoggingConfig = LoggingConfig()
     session: SessionConfig = SessionConfig()
+    agent: AgentConfig = AgentConfig()
     channels: ChannelsConfig = ChannelsConfig()
 
 

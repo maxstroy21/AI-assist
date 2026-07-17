@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from sba.core.types import IncomingMessage, OutgoingKind, OutgoingMessage
 
@@ -46,6 +46,15 @@ class CliChannel:
     async def send(self, out: OutgoingMessage) -> None:
         prefix = "🔔 " if out.kind == OutgoingKind.NOTIFICATION else ""
         print(f"{prefix}ассистент> {out.text}")
+
+    async def send_stream(self, out: OutgoingMessage, deltas: AsyncIterator[str]) -> str:
+        print("ассистент> ", end="", flush=True)
+        parts: list[str] = []
+        async for delta in deltas:
+            parts.append(delta)
+            print(delta, end="", flush=True)
+        print()
+        return "".join(parts)
 
     def _read_line(self) -> str | None:
         try:

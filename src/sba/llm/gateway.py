@@ -1,17 +1,21 @@
-"""Контракт LLM Gateway (реализация с реальными провайдерами — Sprint 1).
+"""Контракт LLM Gateway — единственная точка обращения к моделям.
 
-Единственная точка обращения к моделям; роли (chat/extraction/...) назначаются
-в config/models.yaml. В Sprint 0 контракт нужен, чтобы тесты и будущий
-оркестратор писались против интерфейса, а не против Ollama.
+Роли (chat/extraction/...) назначаются в config/models.yaml; остальной код
+пишется против этого интерфейса, а не против конкретного рантайма.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Literal, Protocol
 
 from pydantic import BaseModel
 
 Role = Literal["chat", "extraction", "summarize", "embedding", "rerank", "stt"]
+
+
+class LLMError(Exception):
+    """Модель недоступна или вернула некорректный ответ."""
 
 
 class ChatMessage(BaseModel):
@@ -28,3 +32,7 @@ class ChatResult(BaseModel):
 
 class LLMGateway(Protocol):
     async def chat(self, role: Role, messages: list[ChatMessage]) -> ChatResult: ...
+
+    def stream(self, role: Role, messages: list[ChatMessage]) -> AsyncIterator[str]:
+        """Потоковая генерация: выдаёт куски текста по мере появления."""
+        ...

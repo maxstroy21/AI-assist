@@ -12,8 +12,15 @@ logging:
 session:
   idle_timeout_minutes: 60
 
+agent:
+  processor: llm             # llm | echo (echo — диагностика транспорта без модели)
+  history_max_messages: 16   # сколько последних сообщений сессии видит модель
+  history_budget_chars: 4000 # ~1000 токенов: жёсткий бюджет истории (CPU-only, см. docs/01 §4.2)
+
 channels:
   cli:
     enabled: true
   telegram:
-    enabled: false       # Sprint 1
+    enabled: false           # включить в local.yaml, там же token и allowed_user_ids
+    token: ""                # токен от @BotFather — ТОЛЬКО в local.yaml, не в git
+    allowed_user_ids: []     # ваш числовой Telegram id; чужие сообщения игнорируются

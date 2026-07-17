@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
 
 import structlog
@@ -19,6 +20,7 @@ from sba.core.types import (
     OutgoingKind,
     OutgoingMessage,
     Session,
+    StreamingChannel,
     new_id,
     utcnow,
 )
@@ -53,22 +55,38 @@ class Router:
             await self._store_message(session, msg.id, "user", msg.kind.value, msg.text)
             await self._bus.publish(MessageReceived(message=msg, session=session))
 
-            reply_text = await self._processor.process(msg, session)
+            reply = await self._processor.process(msg, session)
 
             out = OutgoingMessage(
                 user_id=msg.user_id,
                 channel=msg.channel,
-                text=reply_text,
+                text=reply if isinstance(reply, str) else "",
                 kind=OutgoingKind.REPLY,
                 reply_to=msg.id,
             )
+            if isinstance(reply, str):
+                await self.deliver(out)
+            else:
+                out.text = await self._deliver_stream(out, reply)
             await self._store_message(session, out.id, "assistant", "text", out.text)
-            await self.deliver(out)
             await self._bus.publish(
-                MessageProcessed(message=msg, session=session, reply_text=reply_text)
+                MessageProcessed(message=msg, session=session, reply_text=out.text)
             )
         finally:
             clear_request_context()
+
+    async def _deliver_stream(self, out: OutgoingMessage, deltas: AsyncIterator[str]) -> str:
+        """Потоковая доставка; канал без send_stream получает собранный текст целиком."""
+        channel = self._channels.get(out.channel)
+        if channel is not None and isinstance(channel, StreamingChannel):
+            return await channel.send_stream(out, deltas)
+        text = "".join([delta async for delta in deltas])
+        out.text = text
+        if channel is None:
+            log.error("channel_not_registered", channel=out.channel, message_id=out.id)
+        else:
+            await channel.send(out)
+        return text
 
     async def deliver(self, out: OutgoingMessage) -> None:
         channel = self._channels.get(out.channel)

@@ -1,0 +1,16 @@
+# systemd unit (Linux). Установка:
+#   sudo cp scripts/sba.service /etc/systemd/system/
+#   sudo systemctl enable --now sba
+[Unit]
+Description=Second Brain Agent
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/AI-assist
+ExecStart=%h/AI-assist/.venv/bin/python -m sba
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

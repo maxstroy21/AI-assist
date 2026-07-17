@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Protocol, runtime_checkable
+from typing import Protocol, TypeAlias, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -73,10 +74,22 @@ class ChannelAdapter(Protocol):
     async def send(self, out: OutgoingMessage) -> None: ...
 
 
-class MessageProcessor(Protocol):
-    """Мозг, к которому Router подключает каналы.
+@runtime_checkable
+class StreamingChannel(Protocol):
+    """Канал, умеющий показывать ответ по мере генерации.
 
-    Sprint 0 — эхо; со Sprint 1 здесь Agent Orchestrator.
+    Возвращает финальный собранный текст (для сохранения в историю).
+    Каналы без этой способности получают ответ целиком через send().
     """
 
-    async def process(self, msg: IncomingMessage, session: Session) -> str: ...
+    async def send_stream(self, out: OutgoingMessage, deltas: AsyncIterator[str]) -> str: ...
+
+
+# Ответ обработчика: готовый текст либо поток кусков текста
+Reply: TypeAlias = "str | AsyncIterator[str]"
+
+
+class MessageProcessor(Protocol):
+    """Мозг, к которому Router подключает каналы (Agent Orchestrator; echo — диагностика)."""
+
+    async def process(self, msg: IncomingMessage, session: Session) -> Reply: ...

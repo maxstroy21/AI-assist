@@ -58,7 +58,8 @@
 - [x] Этапы 7–9 — итерации и roadmap
 - [x] Согласование архитектуры с владельцем (среда: Ollama, CPU-only — см. docs/01-requirements.md §4)
 - [x] Sprint 0 — скелет проекта (конфиг, логи, шина событий, Router, SQLite, REPL, CI)
-- [ ] Sprint 1 — Telegram + локальная LLM ← **вы здесь**
+- [x] Sprint 1 — Telegram + локальная LLM (Gateway, оркестратор с историей, streaming)
+- [ ] Sprint 2 — Tool Calling + первые инструменты ← **вы здесь**
 
 ## Запуск (разработка)
 
@@ -67,7 +68,7 @@
 uv venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
 uv pip install -e ".[dev]"
 
-# консольный канал (echo до Sprint 1)
+# консольный канал: диалог с локальной LLM (нужна запущенная Ollama)
 python -m sba
 
 # проверки — те же, что в CI
@@ -76,3 +77,31 @@ ruff check . && mypy && lint-imports && pytest -q
 
 Настройки: `config/default.yaml` (в git) переопределяются файлом `config/local.yaml`
 (не в git) и переменными окружения вида `SBA__LOGGING__LEVEL=DEBUG`.
+Роли моделей — в `config/models.yaml`; диагностический режим без LLM:
+`SBA__AGENT__PROCESSOR=echo`.
+
+## Подключение Telegram
+
+1. Создайте бота: в Telegram напишите [@BotFather](https://t.me/BotFather) → `/newbot` →
+   получите токен.
+2. Создайте `config/local.yaml` (файл не попадает в git):
+
+   ```yaml
+   channels:
+     telegram:
+       enabled: true
+       token: "СЮДА_ТОКЕН_ОТ_BOTFATHER"
+       allowed_user_ids: []   # пока пусто — см. шаг 3
+   ```
+
+3. Запустите `python -m sba` и напишите боту любое сообщение. Бот промолчит,
+   а в логе появится строка `telegram_unauthorized` с вашим числовым `user_id` —
+   впишите его в `allowed_user_ids: [ваш_id]` и перезапустите. Сообщения от всех
+   остальных игнорируются молча.
+
+## Автозапуск (сервис-режим)
+
+- **Windows:** `powershell -ExecutionPolicy Bypass -File scripts\install_autostart_windows.ps1` —
+  регистрирует задачу планировщика: старт при входе в систему, авто-перезапуск при
+  падении, лог в `data\service.log`.
+- **Linux:** `scripts/sba.service` — systemd unit (инструкция внутри файла).
