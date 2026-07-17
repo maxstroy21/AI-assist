@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import structlog
 
 from sba.core.agent.context import build_messages
+from sba.core.agent.language import strip_cjk
 from sba.core.history import HistoryReader
 from sba.core.types import IncomingMessage, Reply, Session
 from sba.infra.config import AgentConfig
@@ -49,18 +50,26 @@ class AgentOrchestrator:
         return self._reply_stream(messages)
 
     async def _reply_stream(self, messages: list[ChatMessage]) -> AsyncIterator[str]:
-        yielded_any = False
+        shown_any = False   # что-то дошло до пользователя после фильтрации
+        raw_any = False     # модель вообще что-то сгенерировала
         try:
             async for delta in self._gateway.stream("chat", messages):
-                yielded_any = True
-                yield delta
+                raw_any = True
+                cleaned = strip_cjk(delta)  # языковой барьер (см. language.py)
+                if cleaned:
+                    shown_any = True
+                    yield cleaned
         except LLMError as exc:
             log.error("llm_failed", error=str(exc))
-            prefix = "\n\n" if yielded_any else ""
+            prefix = "\n\n" if shown_any else ""
             yield (
                 f"{prefix}⚠️ Не получилось обратиться к модели: {exc}\n"
                 "Проверьте, что Ollama запущена (ollama ps)."
             )
             return
-        if not yielded_any:
-            yield "(модель вернула пустой ответ)"
+        if not shown_any:
+            yield (
+                "(модель ответила не на русском — переформулируйте вопрос, пожалуйста)"
+                if raw_any
+                else "(модель вернула пустой ответ)"
+            )
