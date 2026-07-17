@@ -127,4 +127,4 @@ def load_config(config_dir: Path, environ: dict[str, str] | None = None) -> Conf
         problems = "; ".join(
             f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.errors()
         )
-        raise ConfigError(f"ошибки конфигурации: {problems}") from exc
+        raise ConfigError(problems) from exc
