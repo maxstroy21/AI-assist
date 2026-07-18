@@ -26,6 +26,27 @@ log = structlog.get_logger(__name__)
 EDIT_INTERVAL_SECONDS = 2.0   # чаще редактировать нельзя — flood limit Telegram
 STREAM_SOFT_LIMIT = 3500      # порог, после которого начинаем новое сообщение
 TYPING_CURSOR = " ▌"
+HEARTBEAT_SECONDS = 15.0      # на CPU модель может думать минуты — показываем, что живы
+
+
+async def with_heartbeat(
+    deltas: AsyncIterator[str], interval: float = HEARTBEAT_SECONDS
+) -> AsyncIterator[tuple[str, str]]:
+    """Оборачивает поток кусков текста: ('text', кусок) либо ('wait', 'N') —
+    сколько секунд подряд поток молчит (модель думает)."""
+    iterator = aiter(deltas)
+    waited = 0.0
+    while True:
+        try:
+            delta = await asyncio.wait_for(anext(iterator), timeout=interval)
+        except StopAsyncIteration:
+            return
+        except TimeoutError:
+            waited += interval
+            yield ("wait", str(int(waited)))
+            continue
+        waited = 0.0
+        yield ("text", delta)
 
 
 class TelegramChannel:
@@ -115,7 +136,13 @@ class TelegramChannel:
         shown = ""
         last_edit = monotonic()
 
-        async for delta in deltas:
+        async for kind, payload in with_heartbeat(deltas):
+            if kind == "wait":
+                base = buffer.strip() or "✍️ …"
+                await self._safe_edit(draft, f"{base}\n⏳ модель думает… ({payload} с)")
+                shown = ""  # следующий текстовый кусок перерисует черновик
+                continue
+            delta = payload
             full.append(delta)
             buffer += delta
             if len(buffer) > STREAM_SOFT_LIMIT:

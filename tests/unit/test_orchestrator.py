@@ -230,6 +230,18 @@ async def test_unknown_tool_error_fed_back_to_model(db: Database) -> None:
     assert any("не существует" in m.content for m in second if m.role == "tool")
 
 
+async def test_duplicate_tool_call_not_reexecuted(db: Database) -> None:
+    executed: list[str] = []
+    same = [ToolCall(id="c", name="probe", arguments={"value": "x"})]
+    llm = FakeLLM(replies=[same, same, "ответ по данным"])
+    text = await collect(make_orchestrator(llm, db, tools=[probe_spec(executed)]))
+
+    assert executed == ["x"]  # исполнен один раз, а не два
+    assert text.endswith("ответ по данным")
+    _, third_call = llm.calls[2]
+    assert any("повторный вызов" in m.content for m in third_call if m.role == "tool")
+
+
 async def test_iteration_limit(db: Database) -> None:
     call = [ToolCall(id="c", name="probe", arguments={"value": "x"})]
     llm = FakeLLM(replies=[call, call, call])

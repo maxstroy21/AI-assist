@@ -160,6 +160,7 @@ class AgentOrchestrator:
     ) -> AsyncIterator[str]:
         tools = self._registry.openai_schemas()
         shown_any = False
+        executed: dict[tuple[str, str], str] = {}  # дедуп повторных одинаковых вызовов
         try:
             for iteration in range(self._config.max_tool_iterations):
                 # required только на первом шаге: дальше модель должна уметь
@@ -200,6 +201,24 @@ class AgentOrchestrator:
                     )
                 )
                 for call in tool_calls:
+                    signature = (
+                        call.name,
+                        json.dumps(call.arguments, sort_keys=True, ensure_ascii=False),
+                    )
+                    if signature in executed:
+                        # модель зациклилась на одном вызове: не жжём минуты CPU,
+                        # а прямо говорим ей сформулировать ответ
+                        log.info("duplicate_tool_call_skipped", tool=call.name)
+                        messages.append(
+                            ChatMessage(
+                                role="tool",
+                                tool_call_id=call.id,
+                                content="(повторный вызов с теми же аргументами; "
+                                "результат не изменился — он уже есть выше. "
+                                "Сформулируй ответ пользователю по этим данным.)",
+                            )
+                        )
+                        continue
                     # видимый маркер реального вызова — защита доверия: ответ
                     # про файлы без строки 🔧 означает, что модель сочиняет
                     args_preview = json.dumps(call.arguments, ensure_ascii=False)
@@ -219,6 +238,7 @@ class AgentOrchestrator:
                             "Ответьте «да» для выполнения или «нет» для отмены."
                         )
                         return
+                    executed[signature] = result.text
                     messages.append(
                         ChatMessage(role="tool", tool_call_id=call.id, content=result.text)
                     )
