@@ -145,6 +145,21 @@ async def test_llm_failure_becomes_friendly_message(db: Database) -> None:
     assert "⚠️" in text
 
 
+async def test_file_question_gets_tool_nudge(db: Database) -> None:
+    llm = FakeLLM(replies=["ок"])
+    await collect(make_orchestrator(llm, db), "найди все файлы .log")
+    _, messages = llm.calls[0]
+    assert messages[-1].role == "system"
+    assert "инструмент" in messages[-1].content
+
+
+async def test_smalltalk_gets_no_nudge(db: Database) -> None:
+    llm = FakeLLM(replies=["привет!"])
+    await collect(make_orchestrator(llm, db), "привет, как дела?")
+    _, messages = llm.calls[0]
+    assert messages[-1].role == "user"
+
+
 # ── agent loop с инструментами ───────────────────────────────────────────────
 
 

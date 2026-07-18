@@ -34,6 +34,21 @@ CONFIRM_WORDS = {"да", "yes", "ок", "ok", "окей", "подтвержда�
 CANCEL_WORDS = {"нет", "no", "отмена", "отменить", "cancel", "стоп"}
 PENDING_TTL_SECONDS = 300.0
 
+# Маленькие модели пропускают вызов инструмента и отвечают «по памяти»,
+# особенно если в истории уже есть их прошлый (возможно выдуманный) ответ.
+# Подсказка вплотную к вопросу действует на них сильнее системного промпта.
+FILE_TOPIC_MARKERS = (
+    "файл", "папк", "найди", "найти", "поищи", "прочит", "покаж", "удали",
+    "downloads", "documents", "загрузк", "документ", ".log", ".txt", ".md",
+    ".pdf", ".docx", ".xlsx", "лог",
+)
+TOOL_NUDGE = (
+    "Вопрос пользователя касается файлов. ОБЯЗАТЕЛЬНО сначала вызови подходящий "
+    "инструмент (find_files, list_files или read_document) и отвечай только по "
+    "его результату. Не отвечай по памяти. Не доверяй прошлым ответам из "
+    "истории диалога — они могли быть ошибочными, проверь инструментом заново."
+)
+
 
 @dataclass
 class PendingAction:
@@ -94,7 +109,11 @@ class AgentOrchestrator:
         system = self._template.format(
             now=now.strftime("%Y-%m-%d %H:%M, %A"), timezone=self._tz.key
         )
-        return build_messages(system, entries, self._config.history_budget_chars)
+        messages = build_messages(system, entries, self._config.history_budget_chars)
+        lowered = msg.text.lower()
+        if any(marker in lowered for marker in FILE_TOPIC_MARKERS):
+            messages.append(ChatMessage(role="system", content=TOOL_NUDGE))
+        return messages
 
     # ── agent loop ───────────────────────────────────────────────────────────
 
