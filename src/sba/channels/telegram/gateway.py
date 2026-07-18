@@ -33,20 +33,33 @@ async def with_heartbeat(
     deltas: AsyncIterator[str], interval: float = HEARTBEAT_SECONDS
 ) -> AsyncIterator[tuple[str, str]]:
     """Оборачивает поток кусков текста: ('text', кусок) либо ('wait', 'N') —
-    сколько секунд подряд поток молчит (модель думает)."""
+    сколько секунд подряд поток молчит (модель думает).
+
+    Важно: ожидание без отмены anext() — отмена по таймауту убила бы
+    сам генератор-источник.
+    """
     iterator = aiter(deltas)
     waited = 0.0
-    while True:
-        try:
-            delta = await asyncio.wait_for(anext(iterator), timeout=interval)
-        except StopAsyncIteration:
-            return
-        except TimeoutError:
-            waited += interval
-            yield ("wait", str(int(waited)))
-            continue
-        waited = 0.0
-        yield ("text", delta)
+    pending: asyncio.Task[str] | None = None
+    try:
+        while True:
+            if pending is None:
+                pending = asyncio.ensure_future(anext(iterator))
+            done, _ = await asyncio.wait({pending}, timeout=interval)
+            if not done:
+                waited += interval
+                yield ("wait", str(int(waited)))
+                continue
+            task, pending = pending, None
+            try:
+                delta = task.result()
+            except StopAsyncIteration:
+                return
+            waited = 0.0
+            yield ("text", delta)
+    finally:
+        if pending is not None:
+            pending.cancel()
 
 
 class TelegramChannel:
