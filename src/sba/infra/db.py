@@ -47,6 +47,26 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_audit_ts ON audit_log (ts);
     """,
+    """
+    CREATE TABLE memory_facts (
+        id            TEXT PRIMARY KEY,
+        user_id       TEXT NOT NULL,
+        type          TEXT NOT NULL,   -- person | project | decision | preference | fact
+        subject       TEXT NOT NULL,   -- кого/чего касается
+        content       TEXT NOT NULL,   -- само знание
+        source        TEXT NOT NULL,   -- explicit | msg:<id> | extracted (Sprint 7)
+        confidence    REAL NOT NULL DEFAULT 1.0,
+        created_at    TEXT NOT NULL,
+        updated_at    TEXT NOT NULL,
+        superseded_by TEXT,            -- вытеснен новым фактом (история сохраняется)
+        retracted_at  TEXT             -- мягкое «забудь»
+    );
+    CREATE INDEX idx_memory_active ON memory_facts (user_id, type)
+        WHERE superseded_by IS NULL AND retracted_at IS NULL;
+    CREATE INDEX idx_memory_subject ON memory_facts (user_id, subject);
+
+    CREATE VIRTUAL TABLE memory_fts USING fts5(subject, content, fact_id UNINDEXED);
+    """,
 ]
 
 

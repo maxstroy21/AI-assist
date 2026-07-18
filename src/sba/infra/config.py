@@ -83,12 +83,17 @@ class ChannelsConfig(_Strict):
     telegram: TelegramChannelConfig = TelegramChannelConfig()
 
 
+class ModulesConfig(_Strict):
+    memory: ChannelToggle = ChannelToggle(enabled=True)
+
+
 class Config(_Strict):
     app: AppConfig = AppConfig()
     logging: LoggingConfig = LoggingConfig()
     session: SessionConfig = SessionConfig()
     agent: AgentConfig = AgentConfig()
     files: FilesConfig = FilesConfig()
+    modules: ModulesConfig = ModulesConfig()
     channels: ChannelsConfig = ChannelsConfig()
 
 

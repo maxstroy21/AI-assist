@@ -93,3 +93,12 @@ class MessageProcessor(Protocol):
     """Мозг, к которому Router подключает каналы (Agent Orchestrator; echo — диагностика)."""
 
     async def process(self, msg: IncomingMessage, session: Session) -> Reply: ...
+
+
+class MemoryPort(Protocol):
+    """Порт памяти для Context Builder (инверсия зависимостей: ядро не знает
+    модуль памяти — модуль реализует этот протокол)."""
+
+    async def preferences_text(self) -> str | None: ...
+
+    async def relevant_facts_text(self, query: str) -> str | None: ...

@@ -22,7 +22,7 @@ from sba.core.agent.context import build_messages
 from sba.core.agent.language import strip_cjk
 from sba.core.history import HistoryReader
 from sba.core.tools.registry import ConfirmationRequired, ToolRegistry
-from sba.core.types import IncomingMessage, Reply, Session
+from sba.core.types import IncomingMessage, MemoryPort, Reply, Session
 from sba.infra.audit import AuditLog
 from sba.infra.config import AgentConfig
 from sba.llm.gateway import ChatMessage, LLMError, LLMGateway, ToolCall
@@ -44,11 +44,25 @@ FILE_TOPIC_MARKERS = (
     "downloads", "documents", "загрузк", "документ", ".log", ".txt", ".md",
     ".pdf", ".docx", ".xlsx", "лог",
 )
-TOOL_NUDGE = (
+FILE_NUDGE = (
     "Вопрос пользователя касается файлов. ОБЯЗАТЕЛЬНО сначала вызови подходящий "
     "инструмент (find_files, list_files или read_document) и отвечай только по "
     "его результату. Не отвечай по памяти. Не доверяй прошлым ответам из "
     "истории диалога — они могли быть ошибочными, проверь инструментом заново."
+)
+MEMORY_TOPIC_MARKERS = (
+    "запомни", "запомн", "забудь", "забыть", "помнишь", "что ты знаешь",
+    "кто такой", "кто такая", "мои предпочтения",
+)
+MEMORY_NUDGE = (
+    "Сообщение касается памяти. ОБЯЗАТЕЛЬНО используй инструменты: "
+    "remember_fact — чтобы запомнить, recall_memory — чтобы вспомнить, "
+    "forget_memory — чтобы забыть. Не отвечай, что не умеешь запоминать, "
+    "и не утверждай, что запомнил, без успешного вызова инструмента."
+)
+TOPIC_NUDGES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (FILE_TOPIC_MARKERS, FILE_NUDGE),
+    (MEMORY_TOPIC_MARKERS, MEMORY_NUDGE),
 )
 
 
@@ -78,12 +92,14 @@ class AgentOrchestrator:
         audit: AuditLog,
         config: AgentConfig,
         timezone: str,
+        memory: MemoryPort | None = None,
     ) -> None:
         self._gateway = gateway
         self._history = history
         self._registry = registry
         self._audit = audit
         self._config = config
+        self._memory = memory
         self._tz = ZoneInfo(timezone)
         self._template = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
         self._pending: dict[tuple[str, str], PendingAction] = {}
@@ -106,9 +122,13 @@ class AgentOrchestrator:
             log.info("destructive_dropped", tool=pending.call.name)
 
         lowered = msg.text.lower()
-        file_topic = any(marker in lowered for marker in FILE_TOPIC_MARKERS)
-        messages = await self._build_context(msg, session, nudge=file_topic)
-        return self._agent_stream(messages, key, force_first_tool=file_topic)
+        nudges = [
+            text
+            for markers, text in TOPIC_NUDGES
+            if any(marker in lowered for marker in markers)
+        ]
+        messages = await self._build_context(msg, session, nudges=nudges)
+        return self._agent_stream(messages, key, force_first_tool=bool(nudges))
 
     # ── служебные команды (мимо LLM, детерминированно) ───────────────────────
 
@@ -143,7 +163,7 @@ class AgentOrchestrator:
     # ── построение контекста ─────────────────────────────────────────────────
 
     async def _build_context(
-        self, msg: IncomingMessage, session: Session, nudge: bool
+        self, msg: IncomingMessage, session: Session, nudges: list[str]
     ) -> list[ChatMessage]:
         # история уже содержит текущее сообщение (Router сохраняет его до обработки)
         entries = await self._history.recent(session.id, self._config.history_max_messages)
@@ -151,9 +171,25 @@ class AgentOrchestrator:
         system = self._template.format(
             now=now.strftime("%Y-%m-%d %H:%M, %A"), timezone=self._tz.key
         )
+        if self._memory is not None:
+            preferences = await self._memory.preferences_text()
+            if preferences:
+                system += (
+                    "\n\nПРЕДПОЧТЕНИЯ ВЛАДЕЛЬЦА (всегда следуй им):\n" + preferences
+                )
         messages = build_messages(system, entries, self._config.history_budget_chars)
-        if nudge:
-            messages.append(ChatMessage(role="system", content=TOOL_NUDGE))
+        if self._memory is not None:
+            facts = await self._memory.relevant_facts_text(msg.text)
+            if facts:
+                messages.append(
+                    ChatMessage(
+                        role="system",
+                        content="ФАКТЫ ИЗ ДОЛГОВРЕМЕННОЙ ПАМЯТИ (проверенные, "
+                        "используй при ответе):\n" + facts,
+                    )
+                )
+        for nudge in nudges:
+            messages.append(ChatMessage(role="system", content=nudge))
         return messages
 
     # ── agent loop ───────────────────────────────────────────────────────────

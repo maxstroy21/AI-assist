@@ -30,6 +30,9 @@ from sba.llm.config import load_models_config
 from sba.llm.service import ModelGateway
 from sba.modules.basic.tools import build_tools as build_basic_tools
 from sba.modules.files.tools import FilesToolset
+from sba.modules.memory.service import MemoryService
+from sba.modules.memory.store import MemoryStore
+from sba.modules.memory.tools import build_memory_tools
 
 log = structlog.get_logger(__name__)
 
@@ -62,6 +65,11 @@ class App:
                 registry.register(spec)
             for spec in FilesToolset(config.files).build_tools():
                 registry.register(spec)
+            memory: MemoryService | None = None
+            if config.modules.memory.enabled:
+                memory = MemoryService(MemoryStore(app.db))
+                for spec in build_memory_tools(memory):
+                    registry.register(spec)
             app.gateway = ModelGateway(load_models_config(config_dir / "models.yaml"))
             processor = AgentOrchestrator(
                 gateway=app.gateway,
@@ -70,6 +78,7 @@ class App:
                 audit=audit,
                 config=config.agent,
                 timezone=config.app.timezone,
+                memory=memory,
             )
 
         app.router = Router(

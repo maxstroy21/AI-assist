@@ -66,11 +66,26 @@ def probe_spec(executed: list[str], risk: RiskLevel = RiskLevel.READ) -> ToolSpe
     )
 
 
+class StubMemory:
+    def __init__(self, preferences: str | None = None, facts: str | None = None) -> None:
+        self._preferences = preferences
+        self._facts = facts
+        self.fact_queries: list[str] = []
+
+    async def preferences_text(self) -> str | None:
+        return self._preferences
+
+    async def relevant_facts_text(self, query: str) -> str | None:
+        self.fact_queries.append(query)
+        return self._facts
+
+
 def make_orchestrator(
     llm,
     db: Database,
     history: list[HistoryEntry] | None = None,
     tools: list[ToolSpec] = (),
+    memory: StubMemory | None = None,
     **config,
 ) -> AgentOrchestrator:
     audit = AuditLog(db)
@@ -84,6 +99,7 @@ def make_orchestrator(
         audit=audit,
         config=AgentConfig(**config),
         timezone="Europe/Moscow",
+        memory=memory,
     )
 
 
@@ -199,6 +215,48 @@ async def test_file_question_forces_tool_on_first_round_only(db: Database) -> No
     )
     await collect(make_orchestrator(llm, db, tools=[probe_spec([])]), "найди файл отчёт")
     assert llm.seen_tool_choice == ["required", None]
+
+
+async def test_preferences_injected_into_system_prompt(db: Database) -> None:
+    llm = FakeLLM(replies=["ок"])
+    memory = StubMemory(preferences="- стиль ответов: отвечать кратко")
+    await collect(make_orchestrator(llm, db, memory=memory))
+    _, messages = llm.calls[0]
+    assert "ПРЕДПОЧТЕНИЯ ВЛАДЕЛЬЦА" in messages[0].content
+    assert "кратко" in messages[0].content
+
+
+async def test_relevant_facts_injected_near_question(db: Database) -> None:
+    llm = FakeLLM(replies=["ок"])
+    memory = StubMemory(facts="- [человек] Иван Петров: подрядчик")
+    await collect(make_orchestrator(llm, db, memory=memory), "кто делает смету?")
+    _, messages = llm.calls[0]
+    assert any(
+        m.role == "system" and "Иван Петров" in m.content for m in messages[1:]
+    )  # факт добавлен отдельным system-сообщением рядом с вопросом
+    assert memory.fact_queries == ["кто делает смету?"]
+
+
+async def test_no_memory_no_injection(db: Database) -> None:
+    llm = FakeLLM(replies=["ок"])
+    await collect(make_orchestrator(llm, db))
+    _, messages = llm.calls[0]
+    system_messages = [m for m in messages if m.role == "system"]
+    assert len(system_messages) == 1  # только базовый промпт: ни фактов, ни предпочтений
+    assert "ПРЕДПОЧТЕНИЯ ВЛАДЕЛЬЦА" not in system_messages[0].content
+
+
+async def test_memory_question_forces_tool(db: Database) -> None:
+    llm = FakeLLM(
+        replies=[[ToolCall(id="c1", name="probe", arguments={"value": "x"})], "запомнил"]
+    )
+    await collect(
+        make_orchestrator(llm, db, tools=[probe_spec([])]),
+        "запомни: у мамы день рождения 3 марта",
+    )
+    assert llm.seen_tool_choice[0] == "required"
+    _, messages = llm.calls[0]
+    assert any("remember_fact" in m.content for m in messages if m.role == "system")
 
 
 # ── agent loop с инструментами ───────────────────────────────────────────────
