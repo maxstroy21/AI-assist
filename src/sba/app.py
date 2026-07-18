@@ -37,6 +37,13 @@ from sba.modules.memory.tools import build_memory_tools
 log = structlog.get_logger(__name__)
 
 
+async def keep_warm_loop(gateway: ModelGateway, interval_seconds: float) -> None:
+    """Фоновый прогрев: не даёт Ollama выгрузить chat-модель из RAM."""
+    while True:
+        await gateway.warmup()
+        await asyncio.sleep(interval_seconds)
+
+
 class App:
     def __init__(self, config: Config) -> None:
         self.config = config
@@ -115,9 +122,16 @@ class App:
         if not self.channels:
             log.error("no_channels_enabled")
             return
+        warm_task: asyncio.Task[None] | None = None
+        if self.gateway is not None and self.config.llm.keep_warm_minutes > 0:
+            warm_task = asyncio.create_task(
+                keep_warm_loop(self.gateway, self.config.llm.keep_warm_minutes * 60)
+            )
         try:
             await asyncio.gather(*(ch.start() for ch in self.channels))
         finally:
+            if warm_task is not None:
+                warm_task.cancel()
             await self.shutdown()
 
     async def shutdown(self) -> None:

@@ -56,7 +56,8 @@ def test_agent_executes_tool_and_answers(tmp_path: Path) -> None:
         config_dir = tmp_path / "config"
         config_dir.mkdir()
         (config_dir / "default.yaml").write_text(
-            f"app:\n  data_dir: {tmp_path / 'data'}\n", encoding="utf-8"
+            f"app:\n  data_dir: {tmp_path / 'data'}\nllm:\n  keep_warm_minutes: 0\n",
+            encoding="utf-8",
         )
         (config_dir / "models.yaml").write_text(
             "runtimes:\n"

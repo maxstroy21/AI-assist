@@ -18,6 +18,11 @@ agent:
   history_budget_chars: 4000 # ~1000 токенов: жёсткий бюджет истории (CPU-only, см. docs/01 §4.2)
   max_tool_iterations: 5     # предохранитель agent loop
 
+llm:
+  keep_warm_minutes: 4       # пинг модели раз в N минут: не даёт Ollama выгрузить её
+                             # из RAM (иначе первый ответ после простоя ждёт минуты);
+                             # 0 — отключить прогрев
+
 modules:
   memory:
     enabled: true            # долговременная память: запомни / вспомни / забудь

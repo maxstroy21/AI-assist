@@ -87,11 +87,17 @@ class ModulesConfig(_Strict):
     memory: ChannelToggle = ChannelToggle(enabled=True)
 
 
+class LLMBehaviorConfig(_Strict):
+    # 0 — отключить прогрев; иначе пинг каждые N минут держит модель в RAM
+    keep_warm_minutes: float = 4.0
+
+
 class Config(_Strict):
     app: AppConfig = AppConfig()
     logging: LoggingConfig = LoggingConfig()
     session: SessionConfig = SessionConfig()
     agent: AgentConfig = AgentConfig()
+    llm: LLMBehaviorConfig = LLMBehaviorConfig()
     files: FilesConfig = FilesConfig()
     modules: ModulesConfig = ModulesConfig()
     channels: ChannelsConfig = ChannelsConfig()

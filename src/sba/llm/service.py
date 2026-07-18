@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+import structlog
+
 from sba.llm.config import ModelsConfig, RoleConfig
 from sba.llm.gateway import (
     ChatMessage,
@@ -19,6 +21,8 @@ from sba.llm.gateway import (
 )
 from sba.llm.providers.openai_compat import OpenAICompatProvider
 from sba.llm.toolcalling import inject_tools_instruction, parse_tool_call_text
+
+log = structlog.get_logger(__name__)
 
 
 class ModelGateway:
@@ -64,6 +68,22 @@ class ModelGateway:
             yield StreamEvent(tool_calls=calls)
         else:
             yield StreamEvent(text=text)
+
+    async def warmup(self) -> None:
+        """Держит chat-модель загруженной в RAM: запрос на 1 токен сбрасывает
+        таймер выгрузки Ollama (OLLAMA_KEEP_ALIVE, по умолчанию 5 минут).
+        Без этого первый вопрос после простоя ждёт холодную загрузку минутами."""
+        try:
+            provider, rc = self._resolve("chat")
+            await provider.chat(
+                rc.model,
+                [ChatMessage(role="user", content="ping")],
+                temperature=0.0,
+                max_tokens=1,
+            )
+            log.debug("llm_keep_warm_ok", model=rc.model)
+        except Exception as exc:  # прогрев не должен ничего ронять
+            log.warning("llm_keep_warm_failed", error=str(exc))
 
     async def aclose(self) -> None:
         for provider in self._providers.values():

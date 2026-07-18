@@ -21,8 +21,9 @@ from sba.llm.gateway import ChatMessage, ChatResult, LLMError, StreamEvent, Tool
 log = structlog.get_logger(__name__)
 
 RETRIES = 3
-# read=180: CPU-инференс медленный, но 3 минуты без единого байта — это зависание
-TIMEOUT = httpx.Timeout(connect=5.0, read=180.0, write=30.0, pool=10.0)
+# read=300: холодная загрузка модели + обработка промпта на CPU занимает минуты;
+# повторов при таймауте нет, так что ждём один раз, с heartbeat в интерфейсе
+TIMEOUT = httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=10.0)
 
 _DONE = object()  # сентинел конца SSE-потока
 
@@ -66,6 +67,7 @@ class OpenAICompatProvider:
         stream: bool,
         tools: list[ToolSchema] | None = None,
         tool_choice: str | None = None,
+        max_tokens: int | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model,
@@ -74,6 +76,8 @@ class OpenAICompatProvider:
         }
         if temperature is not None:
             payload["temperature"] = temperature
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         if tools:
             payload["tools"] = tools
             if tool_choice is not None:
@@ -83,9 +87,13 @@ class OpenAICompatProvider:
     # ── не-потоковый вызов ───────────────────────────────────────────────────
 
     async def chat(
-        self, model: str, messages: list[ChatMessage], temperature: float | None = None
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
     ) -> ChatResult:
-        payload = self._payload(model, messages, temperature, stream=False)
+        payload = self._payload(model, messages, temperature, stream=False, max_tokens=max_tokens)
         last_error: Exception | None = None
         for attempt in range(RETRIES):
             try:
