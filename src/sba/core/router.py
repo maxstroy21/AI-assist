@@ -56,6 +56,11 @@ class Router:
             if msg.text.strip().lower() in NEW_SESSION_COMMANDS:
                 await self._start_fresh_session(msg)
                 return
+            if msg.text.strip().startswith("/"):
+                # служебный обмен: не попадает ни в историю, ни в события —
+                # иначе модель учится имитировать форматы служебных отчётов
+                await self._handle_service_message(msg)
+                return
             session = await self._get_or_create_session(msg)
             await self._store_message(session, msg.id, "user", msg.kind.value, msg.text)
             await self._bus.publish(MessageReceived(message=msg, session=session))
@@ -99,6 +104,16 @@ class Router:
             log.error("channel_not_registered", channel=out.channel, message_id=out.id)
             return
         await channel.send(out)
+
+    async def _handle_service_message(self, msg: IncomingMessage) -> None:
+        session = await self._get_or_create_session(msg)
+        reply = await self._processor.process(msg, session)
+        text = reply if isinstance(reply, str) else "".join([d async for d in reply])
+        await self.deliver(
+            OutgoingMessage(
+                user_id=msg.user_id, channel=msg.channel, text=text, reply_to=msg.id
+            )
+        )
 
     # ── сессии ────────────────────────────────────────────────────────────────
 

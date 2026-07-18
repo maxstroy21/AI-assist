@@ -121,6 +121,18 @@ async def test_new_command_closes_session(db: Database) -> None:
     assert all("/new" != r["content"] for r in rows)
 
 
+async def test_slash_commands_not_persisted(db: Database) -> None:
+    router = make_router(db)
+    channel = CollectingChannel()
+    router.register_channel(channel)
+
+    await router.handle_incoming(IncomingMessage(user_id="u1", channel="cli", text="/audit"))
+
+    assert len(channel.sent) == 1  # ответ доставлен (эхо-процессор)
+    rows = await db.fetch_all("SELECT content FROM messages")
+    assert rows == []  # ни команда, ни ответ не попали в историю
+
+
 async def test_unknown_channel_does_not_crash(db: Database) -> None:
     router = make_router(db)  # канал не зарегистрирован
     await router.handle_incoming(IncomingMessage(user_id="u1", channel="ghost", text="эй"))

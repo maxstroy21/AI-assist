@@ -132,6 +132,11 @@ class AgentOrchestrator:
                 for ts, kind, name, detail in rows
             ]
             return "Последние действия (новые сверху):\n" + "\n".join(lines)
+        if command.startswith("/"):
+            return (
+                f"Неизвестная команда {command}. Доступны: /new — новый разговор, "
+                "/tools — список инструментов, /audit — журнал действий."
+            )
         return None
 
     # ── построение контекста ─────────────────────────────────────────────────

@@ -170,6 +170,13 @@ async def test_service_command_audit_empty_and_after_call(db: Database) -> None:
     assert "tool_call" in report and "probe" in report
 
 
+async def test_unknown_slash_command_gets_help_without_llm(db: Database) -> None:
+    llm = FakeLLM()
+    text = await collect(make_orchestrator(llm, db), "/помощь")
+    assert "Доступны" in text
+    assert llm.calls == []
+
+
 async def test_file_question_gets_tool_nudge(db: Database) -> None:
     llm = FakeLLM(replies=["ок"])
     await collect(make_orchestrator(llm, db), "найди все файлы .log")
