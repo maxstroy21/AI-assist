@@ -9,9 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # нижняя поддерживаемая версия (requires-python >=3.11) — совпадает
+      # с python_version у mypy; на 3.12 CI тянул numpy 2.5, чьи стабы
+      # используют синтаксис 3.12, и mypy с таргетом 3.11 падал на них
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
       - name: Install
         run: pip install -e ".[dev]"
       - name: Lint (ruff)
