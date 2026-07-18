@@ -26,6 +26,7 @@ from sba.core.types import IncomingMessage, Reply, Session
 from sba.infra.audit import AuditLog
 from sba.infra.config import AgentConfig
 from sba.llm.gateway import ChatMessage, LLMError, LLMGateway, ToolCall
+from sba.llm.toolcalling import parse_tool_call_text
 
 log = structlog.get_logger(__name__)
 
@@ -186,14 +187,22 @@ class AgentOrchestrator:
                         tool_calls = event.tool_calls
 
                 if not tool_calls:
-                    if not shown_any:
-                        yield (
-                            "(модель ответила не на русском — переформулируйте "
-                            "вопрос, пожалуйста)"
-                            if raw_text
-                            else "(модель вернула пустой ответ)"
-                        )
-                    return
+                    # qwen иногда пишет вызов инструмента JSON-текстом в ответ —
+                    # спасаем его как настоящий вызов, а не показываем мусор
+                    joined = "".join(raw_text).strip()
+                    salvaged = parse_tool_call_text(joined) if joined else None
+                    if salvaged is not None:
+                        log.info("text_tool_call_salvaged", tool=salvaged[0].name)
+                        tool_calls = salvaged
+                    else:
+                        if not shown_any:
+                            yield (
+                                "(модель ответила не на русском — переформулируйте "
+                                "вопрос, пожалуйста)"
+                                if raw_text
+                                else "(модель вернула пустой ответ)"
+                            )
+                        return
 
                 log.info(
                     "agent_tool_round",

@@ -237,6 +237,19 @@ async def test_unknown_tool_error_fed_back_to_model(db: Database) -> None:
     assert any("не существует" in m.content for m in second if m.role == "tool")
 
 
+async def test_text_json_tool_call_salvaged(db: Database) -> None:
+    executed: list[str] = []
+    llm = FakeLLM(
+        replies=[
+            '{"name": "probe", "arguments": {"value": "спасён"}}',  # JSON текстом
+            "готово по данным инструмента",
+        ]
+    )
+    text = await collect(make_orchestrator(llm, db, tools=[probe_spec(executed)]))
+    assert executed == ["спасён"]
+    assert text.endswith("готово по данным инструмента")
+
+
 async def test_duplicate_tool_call_not_reexecuted(db: Database) -> None:
     executed: list[str] = []
     same = [ToolCall(id="c", name="probe", arguments={"value": "x"})]
