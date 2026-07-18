@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -42,13 +42,16 @@ PENDING_TTL_SECONDS = 300.0
 FILE_TOPIC_MARKERS = (
     "файл", "папк", "найди", "найти", "поищи", "прочит", "покаж", "удали",
     "downloads", "documents", "загрузк", "документ", ".log", ".txt", ".md",
-    ".pdf", ".docx", ".xlsx", "лог",
+    ".pdf", ".docx", ".xlsx", "лог", "заметк", "конспект",
 )
 FILE_NUDGE = (
-    "Вопрос пользователя касается файлов. ОБЯЗАТЕЛЬНО сначала вызови подходящий "
-    "инструмент (find_files, list_files или read_document) и отвечай только по "
-    "его результату. Не отвечай по памяти. Не доверяй прошлым ответам из "
-    "истории диалога — они могли быть ошибочными, проверь инструментом заново."
+    "Вопрос пользователя касается файлов или документов. ОБЯЗАТЕЛЬНО сначала "
+    "вызови подходящий инструмент: search_documents — если вопрос о СОДЕРЖИМОМ "
+    "документов или заметок; find_files или list_files — если нужен поиск/список "
+    "файлов по именам; read_document — прочитать конкретный файл. Отвечай только "
+    "по результату инструмента, с указанием файла-источника. Не отвечай по памяти. "
+    "Не доверяй прошлым ответам из истории диалога — они могли быть ошибочными, "
+    "проверь инструментом заново."
 )
 MEMORY_TOPIC_MARKERS = (
     "запомни", "запомн", "забудь", "забыть", "помнишь", "что ты знаешь",
@@ -93,6 +96,7 @@ class AgentOrchestrator:
         config: AgentConfig,
         timezone: str,
         memory: MemoryPort | None = None,
+        extra_commands: dict[str, tuple[str, Callable[[], Awaitable[str]]]] | None = None,
     ) -> None:
         self._gateway = gateway
         self._history = history
@@ -103,6 +107,9 @@ class AgentOrchestrator:
         self._tz = ZoneInfo(timezone)
         self._template = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
         self._pending: dict[tuple[str, str], PendingAction] = {}
+        # сервис-команды модулей: (описание, обработчик); инъекция из app.py,
+        # чтобы ядро не знало о модулях (границы docs/03)
+        self._extra_commands = extra_commands or {}
 
     async def process(self, msg: IncomingMessage, session: Session) -> Reply:
         service_reply = await self._service_command(msg.text)
@@ -153,11 +160,17 @@ class AgentOrchestrator:
                 for ts, kind, name, detail in rows
             ]
             return "Последние действия (новые сверху):\n" + "\n".join(lines)
+        extra = self._extra_commands.get(command)
+        if extra is not None:
+            return await extra[1]()
         if command.startswith("/"):
-            return (
-                f"Неизвестная команда {command}. Доступны: /new — новый разговор, "
-                "/tools — список инструментов, /audit — журнал действий."
-            )
+            known = [
+                "/new — новый разговор",
+                "/tools — список инструментов",
+                "/audit — журнал действий",
+                *(f"{name} — {descr}" for name, (descr, _) in self._extra_commands.items()),
+            ]
+            return f"Неизвестная команда {command}. Доступны: " + ", ".join(known) + "."
         return None
 
     # ── построение контекста ─────────────────────────────────────────────────

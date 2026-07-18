@@ -117,6 +117,50 @@ class OpenAICompatProvider:
             return self._parse_result(response.json())
         raise LLMError(f"модель недоступна после {RETRIES} попыток: {last_error}")
 
+    # ── эмбеддинги ───────────────────────────────────────────────────────────
+
+    async def embed(self, model: str, texts: list[str]) -> list[list[float]]:
+        """POST /embeddings (OpenAI-совместимый; Ollama поддерживает).
+
+        Порядок векторов гарантируется полем index ответа.
+        """
+        if not texts:
+            return []
+        payload = {"model": model, "input": texts}
+        last_error: Exception | None = None
+        for attempt in range(RETRIES):
+            try:
+                response = await self._client.post("embeddings", json=payload)
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last_error = exc
+                await self._backoff(attempt, str(exc))
+                continue
+            except httpx.TransportError as exc:
+                raise LLMError(
+                    f"эмбеддинг-модель не ответила за отведённое время: {exc!r}"
+                ) from exc
+            if response.status_code >= 500:
+                last_error = LLMError(f"HTTP {response.status_code}: {response.text[:200]}")
+                await self._backoff(attempt, f"HTTP {response.status_code}")
+                continue
+            if response.status_code >= 400:
+                raise LLMError(f"HTTP {response.status_code}: {response.text[:200]}")
+            return self._parse_embeddings(response.json(), expected=len(texts))
+        raise LLMError(f"эмбеддинг-модель недоступна после {RETRIES} попыток: {last_error}")
+
+    @staticmethod
+    def _parse_embeddings(data: dict[str, Any], expected: int) -> list[list[float]]:
+        try:
+            items = sorted(data["data"], key=lambda item: int(item["index"]))
+            vectors = [[float(x) for x in item["embedding"]] for item in items]
+        except (LookupError, TypeError, ValueError) as exc:
+            raise LLMError(f"некорректный ответ эмбеддинга: {str(data)[:200]}") from exc
+        if len(vectors) != expected:
+            raise LLMError(
+                f"эмбеддинг вернул {len(vectors)} векторов вместо {expected}"
+            )
+        return vectors
+
     # ── потоковый вызов ──────────────────────────────────────────────────────
 
     async def stream(

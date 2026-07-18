@@ -144,3 +144,37 @@ async def test_connection_error_exhausts_retries(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr("asyncio.sleep", no_sleep)
     with pytest.raises(LLMError, match="недоступна"):
         await make_provider(handler).chat("m", MSGS)
+
+
+async def test_embed_parses_vectors_in_order() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert request.url.path.endswith("/embeddings")
+        assert body["input"] == ["первый", "второй"]
+        return httpx.Response(
+            200,
+            json={
+                "data": [
+                    {"index": 1, "embedding": [0.3, 0.4]},
+                    {"index": 0, "embedding": [0.1, 0.2]},
+                ]
+            },
+        )
+
+    vectors = await make_provider(handler).embed("emb", ["первый", "второй"])
+    assert vectors == [[0.1, 0.2], [0.3, 0.4]]  # порядок восстановлен по index
+
+
+async def test_embed_empty_input_short_circuits() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("не должно быть запроса")
+
+    assert await make_provider(handler).embed("emb", []) == []
+
+
+async def test_embed_wrong_count_is_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [0.1]}]})
+
+    with pytest.raises(LLMError, match="вместо 2"):
+        await make_provider(handler).embed("emb", ["а", "б"])

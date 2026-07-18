@@ -26,6 +26,20 @@ llm:
 modules:
   memory:
     enabled: true            # долговременная память: запомни / вспомни / забудь
+  rag:
+    enabled: true            # поиск по документам («найди в моих документах…»)
+    # Папки с документами для индексации — задать в local.yaml. Windows-пути
+    # В ОДИНАРНЫХ кавычках: sources: ['C:\Users\mmirosh\Documents']
+    sources: []
+    include_extensions: [".pdf", ".docx", ".md", ".txt"]
+    max_file_mb: 50            # файлы крупнее пропускаются (с записью в лог)
+    scan_interval_minutes: 2   # период поиска новых/изменённых файлов
+    dialog_cooldown_seconds: 90  # пауза индексации после сообщения в диалоге
+    chunk_chars: 1800          # размер фрагмента (~450 токенов)
+    chunk_overlap_chars: 200
+    search_top_k: 5            # сколько фрагментов возвращает search_documents
+    snippet_chars: 700         # длина цитаты в результате поиска
+    embed_batch: 8             # чанков за один запрос эмбеддинга (CPU-only)
 
 files:
   # Папки, внутри которых работают файловые инструменты. Пусто = инструменты
