@@ -59,7 +59,26 @@
 - [x] Согласование архитектуры с владельцем (среда: Ollama, CPU-only — см. docs/01-requirements.md §4)
 - [x] Sprint 0 — скелет проекта (конфиг, логи, шина событий, Router, SQLite, REPL, CI)
 - [x] Sprint 1 — Telegram + локальная LLM (Gateway, оркестратор с историей, streaming)
-- [ ] Sprint 2 — Tool Calling + первые инструменты ← **вы здесь**
+- [x] Sprint 2 — агентность: Tool Registry, agent loop, уровни риска, аудит, первые инструменты
+- [ ] Sprint 3 — Память v1 ← **вы здесь**
+
+## Инструменты ассистента (Sprint 2)
+
+Ассистент сам решает, когда позвать инструмент: `get_current_time`, `list_files`,
+`read_document` (текстовые файлы), `delete_file` (в корзину, **только после
+подтверждения** — ответьте «да» или «нет» на вопрос ассистента).
+
+Файловые инструменты работают строго внутри разрешённых папок. Добавьте их
+в `config/local.yaml` (Windows-пути — в одинарных кавычках):
+
+```yaml
+files:
+  allowed_roots: ['C:\Users\имя\Downloads', 'C:\Users\имя\Documents']
+```
+
+Каждый вызов инструмента записывается в журнал действий (таблица `audit_log`
+в `data/sba.db`). Модели без нативного tool calling поддерживаются через
+JSON-fallback: `tool_mode: json` у роли в `config/models.yaml`.
 
 ## Запуск (разработка)
 

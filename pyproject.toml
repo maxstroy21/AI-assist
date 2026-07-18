@@ -15,6 +15,7 @@ dependencies = [
     "tzdata>=2024.1",  # база часовых поясов IANA: в Windows нет системной
     "httpx>=0.27",
     "aiogram>=3.10",
+    "send2trash>=1.8",  # удаление в корзину ОС, а не мимо неё
 ]
 
 [project.optional-dependencies]
@@ -56,14 +57,24 @@ packages = ["sba"]
 module = "tests.*"
 disallow_untyped_defs = false
 
+[[tool.mypy.overrides]]
+module = "send2trash.*"
+ignore_missing_imports = true
+
 # ── Границы модулей (архитектура: docs/03-project-structure.md) ──────────────
 [tool.importlinter]
 root_package = "sba"
 
 [[tool.importlinter.contracts]]
-name = "Ядро не знает о каналах"
+name = "Ядро не знает о каналах и модулях"
 type = "forbidden"
 source_modules = ["sba.core"]
+forbidden_modules = ["sba.channels", "sba.modules"]
+
+[[tool.importlinter.contracts]]
+name = "Модули не знают о каналах"
+type = "forbidden"
+source_modules = ["sba.modules"]
 forbidden_modules = ["sba.channels"]
 
 [[tool.importlinter.contracts]]

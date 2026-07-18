@@ -69,6 +69,13 @@ class AgentConfig(_Strict):
     processor: Literal["llm", "echo"] = "llm"
     history_max_messages: int = 16
     history_budget_chars: int = 4000
+    max_tool_iterations: int = 5
+
+
+class FilesConfig(_Strict):
+    allowed_roots: list[Path] = []
+    max_list_entries: int = 50
+    max_read_chars: int = 4000
 
 
 class ChannelsConfig(_Strict):
@@ -81,6 +88,7 @@ class Config(_Strict):
     logging: LoggingConfig = LoggingConfig()
     session: SessionConfig = SessionConfig()
     agent: AgentConfig = AgentConfig()
+    files: FilesConfig = FilesConfig()
     channels: ChannelsConfig = ChannelsConfig()
 
 

@@ -20,12 +20,16 @@ from sba.core.events import EventBus
 from sba.core.history import HistoryStore
 from sba.core.processor import EchoProcessor
 from sba.core.router import Router
+from sba.core.tools.registry import ToolRegistry
 from sba.core.types import ChannelAdapter, MessageProcessor
+from sba.infra.audit import AuditLog
 from sba.infra.config import Config, ConfigError, load_config
 from sba.infra.db import Database
 from sba.infra.logging import setup_logging
 from sba.llm.config import load_models_config
 from sba.llm.service import ModelGateway
+from sba.modules.basic.tools import build_tools as build_basic_tools
+from sba.modules.files.tools import FilesToolset
 
 log = structlog.get_logger(__name__)
 
@@ -52,10 +56,17 @@ class App:
         if config.agent.processor == "echo":
             processor = EchoProcessor()
         else:
+            audit = AuditLog(app.db)
+            registry = ToolRegistry(audit)
+            for spec in build_basic_tools(config.app.timezone):
+                registry.register(spec)
+            for spec in FilesToolset(config.files).build_tools():
+                registry.register(spec)
             app.gateway = ModelGateway(load_models_config(config_dir / "models.yaml"))
             processor = AgentOrchestrator(
                 gateway=app.gateway,
                 history=HistoryStore(app.db),
+                registry=registry,
                 config=config.agent,
                 timezone=config.app.timezone,
             )

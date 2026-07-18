@@ -50,8 +50,46 @@ async def test_stream_yields_deltas() -> None:
         return httpx.Response(200, content=sse("при", "вет"))
 
     provider = make_provider(handler)
-    parts = [d async for d in provider.stream("m1", MSGS)]
+    parts = [e.text async for e in provider.stream("m1", MSGS)]
     assert "".join(parts) == "привет"
+
+
+async def test_stream_assembles_tool_calls_across_chunks() -> None:
+    chunk1 = {
+        "choices": [
+            {
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call_1",
+                            "function": {"name": "list_files", "arguments": '{"pa'},
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    chunk2 = {
+        "choices": [
+            {"delta": {"tool_calls": [{"index": 0, "function": {"arguments": 'th": "."}'}}]}}
+        ]
+    }
+    body = (
+        f"data: {json.dumps(chunk1)}\n\n"
+        f"data: {json.dumps(chunk2)}\n\n"
+        "data: [DONE]\n\n"
+    ).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body)
+
+    events = [e async for e in make_provider(handler).stream("m1", MSGS, tools=[{}])]
+    final = events[-1]
+    assert final.tool_calls is not None
+    assert final.tool_calls[0].id == "call_1"
+    assert final.tool_calls[0].name == "list_files"
+    assert final.tool_calls[0].arguments == {"path": "."}
 
 
 async def test_retries_on_5xx_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:

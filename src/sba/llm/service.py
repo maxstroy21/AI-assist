@@ -1,12 +1,24 @@
-"""Реализация LLM Gateway: роль → (рантайм, модель, параметры) из models.yaml."""
+"""Реализация LLM Gateway: роль → (рантайм, модель, параметры) из models.yaml.
+
+Для tool_mode=json включается fallback: инструменты описываются в промпте,
+ответ буферизуется и разбирается как возможный JSON-вызов (llm/toolcalling.py).
+"""
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
 from sba.llm.config import ModelsConfig, RoleConfig
-from sba.llm.gateway import ChatMessage, ChatResult, LLMError, Role
+from sba.llm.gateway import (
+    ChatMessage,
+    ChatResult,
+    LLMError,
+    Role,
+    StreamEvent,
+    ToolSchema,
+)
 from sba.llm.providers.openai_compat import OpenAICompatProvider
+from sba.llm.toolcalling import inject_tools_instruction, parse_tool_call_text
 
 
 class ModelGateway:
@@ -27,10 +39,28 @@ class ModelGateway:
         provider, rc = self._resolve(role)
         return await provider.chat(rc.model, messages, rc.temperature)
 
-    async def stream(self, role: Role, messages: list[ChatMessage]) -> AsyncIterator[str]:
+    async def stream(
+        self,
+        role: Role,
+        messages: list[ChatMessage],
+        tools: list[ToolSchema] | None = None,
+    ) -> AsyncIterator[StreamEvent]:
         provider, rc = self._resolve(role)
-        async for delta in provider.stream(rc.model, messages, rc.temperature):
-            yield delta
+        if not tools or rc.tool_mode == "native":
+            async for event in provider.stream(rc.model, messages, rc.temperature, tools=tools):
+                yield event
+            return
+        # json-fallback: буферизуем ответ целиком и решаем, вызов это или текст
+        prepared = inject_tools_instruction(messages, tools)
+        parts: list[str] = []
+        async for event in provider.stream(rc.model, prepared, rc.temperature):
+            parts.append(event.text)
+        text = "".join(parts)
+        calls = parse_tool_call_text(text)
+        if calls:
+            yield StreamEvent(tool_calls=calls)
+        else:
+            yield StreamEvent(text=text)
 
     async def aclose(self) -> None:
         for provider in self._providers.values():

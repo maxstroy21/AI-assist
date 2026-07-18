@@ -35,6 +35,18 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX idx_messages_conversation ON messages (conversation_id, created_at);
     """,
+    """
+    CREATE TABLE audit_log (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts         TEXT NOT NULL,
+        request_id TEXT,
+        kind       TEXT NOT NULL,   -- tool_call | tool_result | confirmation_requested | ...
+        name       TEXT NOT NULL,
+        detail     TEXT NOT NULL,
+        confirmed  INTEGER          -- NULL: не применимо; 0/1 для destructive
+    );
+    CREATE INDEX idx_audit_ts ON audit_log (ts);
+    """,
 ]
 
 

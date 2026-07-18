@@ -25,6 +25,9 @@ class RoleConfig(_Strict):
     runtime: str
     model: str
     temperature: float | None = None
+    # native — модель умеет tool calling сама; json — инструкция в промпте
+    # и разбор JSON-ответа (страховка для моделей без tool calling)
+    tool_mode: Literal["native", "json"] = "native"
 
 
 class ModelsConfig(_Strict):
