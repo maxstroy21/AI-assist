@@ -9,8 +9,8 @@ runtimes:
     api_key: ""              # Ollama не требует ключа
 
 roles:
-  # temperature 0.5: qwen2.5 7B при 0.7 склонна вставлять китайские/английские
-  # фрагменты в русский ответ; ниже температура — стабильнее язык и меньше выдумок.
-  chat:       { runtime: ollama, model: "qwen2.5:7b-instruct", temperature: 0.5 }
+  # temperature 0.3: у qwen2.5 7B выше температура = чаще вставки на других
+  # языках и, главное, выдуманные списки файлов вместо вызова инструмента.
+  chat:       { runtime: ollama, model: "qwen2.5:7b-instruct", temperature: 0.3 }
   extraction: { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.0 }
   summarize:  { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }

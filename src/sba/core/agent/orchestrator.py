@@ -138,6 +138,13 @@ class AgentOrchestrator:
                     )
                 )
                 for call in tool_calls:
+                    # видимый маркер реального вызова — защита доверия: ответ
+                    # про файлы без строки 🔧 означает, что модель сочиняет
+                    args_preview = json.dumps(call.arguments, ensure_ascii=False)
+                    if len(args_preview) > 120:
+                        args_preview = args_preview[:120] + "…"
+                    shown_any = True
+                    yield f"🔧 {call.name}({args_preview})\n"
                     try:
                         result = await self._registry.execute(call)
                     except ConfirmationRequired as need:

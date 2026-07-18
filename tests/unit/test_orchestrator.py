@@ -159,7 +159,8 @@ async def test_tool_round_then_final_answer(db: Database) -> None:
     orchestrator = make_orchestrator(llm, db, tools=[probe_spec(executed)])
 
     text = await collect(orchestrator)
-    assert text == "Готово: probe вернул результат"
+    assert "🔧 probe" in text          # видимый маркер реального вызова
+    assert text.endswith("Готово: probe вернул результат")
     assert executed == ["x"]
     assert llm.seen_tools[0]  # схемы инструментов переданы модели
 
@@ -175,7 +176,7 @@ async def test_unknown_tool_error_fed_back_to_model(db: Database) -> None:
         replies=[[ToolCall(id="c1", name="ghost", arguments={})], "понял, инструмента нет"]
     )
     text = await collect(make_orchestrator(llm, db, tools=[probe_spec([])]))
-    assert text == "понял, инструмента нет"
+    assert text.endswith("понял, инструмента нет")
     _, second = llm.calls[1]
     assert any("не существует" in m.content for m in second if m.role == "tool")
 
@@ -210,7 +211,7 @@ async def test_destructive_asks_confirmation_and_executes_on_yes(db: Database) -
 
     answer = await collect(orchestrator, "да")
     assert executed == ["файл.txt"]
-    assert answer == "Удалил файл.txt"
+    assert answer.endswith("Удалил файл.txt")
 
 
 async def test_destructive_cancelled_on_no(db: Database) -> None:
