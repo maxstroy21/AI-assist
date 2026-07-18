@@ -22,6 +22,27 @@ async def test_list_files(tmp_path: Path) -> None:
     assert "папка" in result
 
 
+async def test_root_referenced_by_its_name(tmp_path: Path) -> None:
+    # «покажи папку Downloads» → имя корня должно означать сам корень
+    root = tmp_path / "Downloads"
+    root.mkdir()
+    (root / "файл.txt").write_text("x", encoding="utf-8")
+    result = await make_toolset(root).list_files(ListArgs(path="downloads"))
+    assert "файл.txt" in result
+
+
+async def test_dot_lists_allowed_roots(tmp_path: Path) -> None:
+    result = await make_toolset(tmp_path).list_files(ListArgs(path="."))
+    assert "Разрешённые папки" in result
+    assert str(tmp_path) in result
+
+
+async def test_nonexistent_folder_mentions_allowed_roots(tmp_path: Path) -> None:
+    result = await make_toolset(tmp_path).list_files(ListArgs(path="нет-такой"))
+    assert "не существует" in result
+    assert str(tmp_path) in result
+
+
 async def test_relative_path_resolved_against_root(tmp_path: Path) -> None:
     sub = tmp_path / "docs"
     sub.mkdir()

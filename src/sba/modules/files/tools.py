@@ -42,25 +42,39 @@ class FilesToolset:
 
     # ── безопасность путей ───────────────────────────────────────────────────
 
+    def _roots_summary(self) -> str:
+        return ", ".join(str(r) for r in self._roots)
+
     def _resolve(self, raw: str) -> Path:
         if not self._roots:
             raise ValueError(NO_ROOTS_HINT)
-        path = Path(raw.strip()).expanduser()
+        cleaned = raw.strip().strip("'\"")
+        # «Downloads» должно означать сам разрешённый корень с таким именем,
+        # а не подпапку Downloads внутри корней
+        for root in self._roots:
+            if cleaned.rstrip("\\/").lower() in (root.name.lower(), str(root).lower()):
+                return root
+        path = Path(cleaned).expanduser()
         candidates = [path] if path.is_absolute() else [root / path for root in self._roots]
         for candidate in candidates:
             resolved = candidate.resolve()
             if any(resolved.is_relative_to(root) for root in self._roots):
                 if resolved.exists() or candidate is candidates[-1]:
                     return resolved
-        allowed = ", ".join(str(r) for r in self._roots)
-        raise ValueError(f"путь {raw!r} вне разрешённых папок. Разрешены: {allowed}")
+        raise ValueError(
+            f"путь {raw!r} вне разрешённых папок. Разрешены: {self._roots_summary()}"
+        )
 
     # ── инструменты ──────────────────────────────────────────────────────────
 
     async def list_files(self, args: ListArgs) -> str:
+        if args.path.strip().strip("'\"") in {"", ".", "/", "\\"}:
+            if not self._roots:
+                return NO_ROOTS_HINT
+            return "Разрешённые папки:\n" + "\n".join(f"📁 {r}" for r in self._roots)
         target = self._resolve(args.path)
         if not target.exists():
-            return f"Папка не существует: {target}"
+            return f"Папка не существует: {target}. Разрешённые папки: {self._roots_summary()}"
         if not target.is_dir():
             return f"{target} — это файл, а не папка"
         entries = sorted(
@@ -113,10 +127,14 @@ class FilesToolset:
     # ── регистрация ──────────────────────────────────────────────────────────
 
     def build_tools(self) -> list[ToolSpec]:
+        roots_hint = (
+            f" Разрешённые папки: {self._roots_summary()}." if self._roots else ""
+        )
         return [
             ToolSpec(
                 name="list_files",
-                description="Показать содержимое папки: файлы и подпапки с размерами и датами",
+                description="Показать содержимое папки: файлы и подпапки с размерами "
+                f"и датами. path='.' покажет список разрешённых папок.{roots_hint}",
                 args_schema=ListArgs,
                 risk=RiskLevel.READ,
                 module="files",
