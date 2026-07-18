@@ -103,6 +103,24 @@ async def test_idle_timeout_closes_session_and_publishes_event(db: Database) -> 
     assert sum(1 for r in conversations if r["closed_at"] is None) == 1
 
 
+async def test_new_command_closes_session(db: Database) -> None:
+    router = make_router(db)
+    channel = CollectingChannel()
+    router.register_channel(channel)
+
+    await router.handle_incoming(IncomingMessage(user_id="u1", channel="cli", text="раз"))
+    await router.handle_incoming(IncomingMessage(user_id="u1", channel="cli", text="/new"))
+    await router.handle_incoming(IncomingMessage(user_id="u1", channel="cli", text="два"))
+
+    conversations = await db.fetch_all("SELECT closed_at FROM conversations")
+    assert len(conversations) == 2
+    assert sum(1 for r in conversations if r["closed_at"] is None) == 1
+    # подтверждение /new доставлено, но в историю не записано
+    assert any("новый разговор" in m.text.lower() for m in channel.sent)
+    rows = await db.fetch_all("SELECT content FROM messages")
+    assert all("/new" != r["content"] for r in rows)
+
+
 async def test_unknown_channel_does_not_crash(db: Database) -> None:
     router = make_router(db)  # канал не зарегистрирован
     await router.handle_incoming(IncomingMessage(user_id="u1", channel="ghost", text="эй"))

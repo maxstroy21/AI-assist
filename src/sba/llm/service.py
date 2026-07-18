@@ -44,10 +44,13 @@ class ModelGateway:
         role: Role,
         messages: list[ChatMessage],
         tools: list[ToolSchema] | None = None,
+        tool_choice: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         provider, rc = self._resolve(role)
         if not tools or rc.tool_mode == "native":
-            async for event in provider.stream(rc.model, messages, rc.temperature, tools=tools):
+            async for event in provider.stream(
+                rc.model, messages, rc.temperature, tools=tools, tool_choice=tool_choice
+            ):
                 yield event
             return
         # json-fallback: буферизуем ответ целиком и решаем, вызов это или текст

@@ -64,6 +64,7 @@ class OpenAICompatProvider:
         temperature: float | None,
         stream: bool,
         tools: list[ToolSchema] | None = None,
+        tool_choice: str | None = None,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "model": model,
@@ -74,6 +75,8 @@ class OpenAICompatProvider:
             payload["temperature"] = temperature
         if tools:
             payload["tools"] = tools
+            if tool_choice is not None:
+                payload["tool_choice"] = tool_choice
         return payload
 
     # ── не-потоковый вызов ───────────────────────────────────────────────────
@@ -107,8 +110,11 @@ class OpenAICompatProvider:
         messages: list[ChatMessage],
         temperature: float | None = None,
         tools: list[ToolSchema] | None = None,
+        tool_choice: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        payload = self._payload(model, messages, temperature, stream=True, tools=tools)
+        payload = self._payload(
+            model, messages, temperature, stream=True, tools=tools, tool_choice=tool_choice
+        )
         last_error: Exception | None = None
         for attempt in range(RETRIES):
             yielded_any = False

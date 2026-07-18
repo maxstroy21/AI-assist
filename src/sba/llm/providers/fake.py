@@ -19,6 +19,7 @@ class FakeLLM:
         self._replies = list(replies or [])
         self.calls: list[tuple[Role, list[ChatMessage]]] = []
         self.seen_tools: list[list[ToolSchema] | None] = []
+        self.seen_tool_choice: list[str | None] = []
 
     def _next_reply(self) -> ScriptItem:
         return self._replies.pop(0) if self._replies else "ok"
@@ -34,9 +35,11 @@ class FakeLLM:
         role: Role,
         messages: list[ChatMessage],
         tools: list[ToolSchema] | None = None,
+        tool_choice: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         self.calls.append((role, list(messages)))
         self.seen_tools.append(tools)
+        self.seen_tool_choice.append(tool_choice)
         item = self._next_reply()
         if isinstance(item, list):
             yield StreamEvent(tool_calls=item)

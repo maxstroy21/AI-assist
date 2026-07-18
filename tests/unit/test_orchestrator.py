@@ -33,6 +33,7 @@ class FailingLLM:
         role: Role,
         messages: list[ChatMessage],
         tools: list[ToolSchema] | None = None,
+        tool_choice: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
         raise LLMError("нет соединения")
         yield StreamEvent()  # unreachable, делает функцию генератором
@@ -182,6 +183,15 @@ async def test_smalltalk_gets_no_nudge(db: Database) -> None:
     await collect(make_orchestrator(llm, db), "привет, как дела?")
     _, messages = llm.calls[0]
     assert messages[-1].role == "user"
+    assert llm.seen_tool_choice == [None]
+
+
+async def test_file_question_forces_tool_on_first_round_only(db: Database) -> None:
+    llm = FakeLLM(
+        replies=[[ToolCall(id="c1", name="probe", arguments={"value": "x"})], "готово"]
+    )
+    await collect(make_orchestrator(llm, db, tools=[probe_spec([])]), "найди файл отчёт")
+    assert llm.seen_tool_choice == ["required", None]
 
 
 # ── agent loop с инструментами ───────────────────────────────────────────────

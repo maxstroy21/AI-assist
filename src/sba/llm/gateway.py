@@ -56,6 +56,8 @@ class LLMGateway(Protocol):
         role: Role,
         messages: list[ChatMessage],
         tools: list[ToolSchema] | None = None,
+        tool_choice: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        """Потоковая генерация; при наличии tools модель может решить их позвать."""
+        """Потоковая генерация; tools — модель может их позвать;
+        tool_choice='required' — обязана (если рантайм поддерживает)."""
         ...

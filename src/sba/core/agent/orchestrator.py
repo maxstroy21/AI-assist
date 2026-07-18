@@ -104,8 +104,10 @@ class AgentOrchestrator:
             # другое сообщение = молчаливая отмена, обрабатываем как обычно
             log.info("destructive_dropped", tool=pending.call.name)
 
-        messages = await self._build_context(msg, session)
-        return self._agent_stream(messages, key)
+        lowered = msg.text.lower()
+        file_topic = any(marker in lowered for marker in FILE_TOPIC_MARKERS)
+        messages = await self._build_context(msg, session, nudge=file_topic)
+        return self._agent_stream(messages, key, force_first_tool=file_topic)
 
     # ── служебные команды (мимо LLM, детерминированно) ───────────────────────
 
@@ -134,7 +136,9 @@ class AgentOrchestrator:
 
     # ── построение контекста ─────────────────────────────────────────────────
 
-    async def _build_context(self, msg: IncomingMessage, session: Session) -> list[ChatMessage]:
+    async def _build_context(
+        self, msg: IncomingMessage, session: Session, nudge: bool
+    ) -> list[ChatMessage]:
         # история уже содержит текущее сообщение (Router сохраняет его до обработки)
         entries = await self._history.recent(session.id, self._config.history_max_messages)
         now = datetime.now(self._tz)
@@ -142,23 +146,30 @@ class AgentOrchestrator:
             now=now.strftime("%Y-%m-%d %H:%M, %A"), timezone=self._tz.key
         )
         messages = build_messages(system, entries, self._config.history_budget_chars)
-        lowered = msg.text.lower()
-        if any(marker in lowered for marker in FILE_TOPIC_MARKERS):
+        if nudge:
             messages.append(ChatMessage(role="system", content=TOOL_NUDGE))
         return messages
 
     # ── agent loop ───────────────────────────────────────────────────────────
 
     async def _agent_stream(
-        self, messages: list[ChatMessage], key: tuple[str, str]
+        self,
+        messages: list[ChatMessage],
+        key: tuple[str, str],
+        force_first_tool: bool = False,
     ) -> AsyncIterator[str]:
         tools = self._registry.openai_schemas()
         shown_any = False
         try:
             for iteration in range(self._config.max_tool_iterations):
+                # required только на первом шаге: дальше модель должна уметь
+                # завершить ответ текстом (если рантайм вообще поддерживает это поле)
+                tool_choice = "required" if force_first_tool and iteration == 0 else None
                 raw_text: list[str] = []
                 tool_calls: list[ToolCall] | None = None
-                async for event in self._gateway.stream("chat", messages, tools=tools):
+                async for event in self._gateway.stream(
+                    "chat", messages, tools=tools, tool_choice=tool_choice
+                ):
                     if event.text:
                         raw_text.append(event.text)
                         cleaned = strip_cjk(event.text)  # языковой барьер
