@@ -72,13 +72,15 @@ def make_orchestrator(
     tools: list[ToolSpec] = (),
     **config,
 ) -> AgentOrchestrator:
-    registry = ToolRegistry(AuditLog(db))
+    audit = AuditLog(db)
+    registry = ToolRegistry(audit)
     for spec in tools:
         registry.register(spec)
     return AgentOrchestrator(
         gateway=llm,
         history=StubHistory(history or [HistoryEntry("user", "вопрос")]),
         registry=registry,
+        audit=audit,
         config=AgentConfig(**config),
         timezone="Europe/Moscow",
     )
@@ -143,6 +145,28 @@ async def test_history_trimmed_to_budget_keeps_latest(db: Database) -> None:
 async def test_llm_failure_becomes_friendly_message(db: Database) -> None:
     text = await collect(make_orchestrator(FailingLLM(), db))
     assert "⚠️" in text
+
+
+async def test_service_command_tools_bypasses_llm(db: Database) -> None:
+    llm = FakeLLM()
+    text = await collect(make_orchestrator(llm, db, tools=[probe_spec([])]), "/tools")
+    assert "probe" in text
+    assert llm.calls == []  # модель не участвовала
+
+
+async def test_service_command_audit_empty_and_after_call(db: Database) -> None:
+    executed: list[str] = []
+    llm = FakeLLM(
+        replies=[[ToolCall(id="c1", name="probe", arguments={"value": "x"})], "готово"]
+    )
+    orchestrator = make_orchestrator(llm, db, tools=[probe_spec(executed)])
+
+    empty = await collect(orchestrator, "/audit")
+    assert "пуст" in empty
+
+    await collect(orchestrator, "сделай probe")
+    report = await collect(orchestrator, "/audit")
+    assert "tool_call" in report and "probe" in report
 
 
 async def test_file_question_gets_tool_nudge(db: Database) -> None:

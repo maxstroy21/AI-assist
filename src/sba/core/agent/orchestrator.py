@@ -23,6 +23,7 @@ from sba.core.agent.language import strip_cjk
 from sba.core.history import HistoryReader
 from sba.core.tools.registry import ConfirmationRequired, ToolRegistry
 from sba.core.types import IncomingMessage, Reply, Session
+from sba.infra.audit import AuditLog
 from sba.infra.config import AgentConfig
 from sba.llm.gateway import ChatMessage, LLMError, LLMGateway, ToolCall
 
@@ -73,18 +74,24 @@ class AgentOrchestrator:
         gateway: LLMGateway,
         history: HistoryReader,
         registry: ToolRegistry,
+        audit: AuditLog,
         config: AgentConfig,
         timezone: str,
     ) -> None:
         self._gateway = gateway
         self._history = history
         self._registry = registry
+        self._audit = audit
         self._config = config
         self._tz = ZoneInfo(timezone)
         self._template = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
         self._pending: dict[tuple[str, str], PendingAction] = {}
 
     async def process(self, msg: IncomingMessage, session: Session) -> Reply:
+        service_reply = await self._service_command(msg.text)
+        if service_reply is not None:
+            return service_reply
+
         key = (msg.user_id, msg.channel)
         pending = self._pending.pop(key, None)
         if pending is not None and not pending.expired:
@@ -99,6 +106,31 @@ class AgentOrchestrator:
 
         messages = await self._build_context(msg, session)
         return self._agent_stream(messages, key)
+
+    # ── служебные команды (мимо LLM, детерминированно) ───────────────────────
+
+    async def _service_command(self, text: str) -> str | None:
+        command = text.strip().lower()
+        if command == "/tools":
+            specs = self._registry.available()
+            if not specs:
+                return "Инструменты не зарегистрированы."
+            return "Зарегистрированные инструменты:\n" + "\n".join(
+                f"• {s.name} [{s.risk}] — {s.description}" for s in specs
+            )
+        if command == "/audit":
+            rows = await self._audit.recent(12)
+            if not rows:
+                return (
+                    "Журнал действий пуст: ни одного вызова инструмента ещё не было. "
+                    "Если ассистент при этом рассказывал про файлы — он их выдумал."
+                )
+            lines = [
+                f"{ts[11:19]} | {kind} | {name} | {detail[:90]}"
+                for ts, kind, name, detail in rows
+            ]
+            return "Последние действия (новые сверху):\n" + "\n".join(lines)
+        return None
 
     # ── построение контекста ─────────────────────────────────────────────────
 

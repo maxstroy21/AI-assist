@@ -17,6 +17,13 @@ class AuditLog:
     def __init__(self, db: Database) -> None:
         self._db = db
 
+    async def recent(self, limit: int = 10) -> list[tuple[str, str, str, str]]:
+        rows = await self._db.fetch_all(
+            "SELECT ts, kind, name, detail FROM audit_log ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        return [(r["ts"], r["kind"], r["name"], r["detail"]) for r in rows]
+
     async def record(
         self,
         kind: str,

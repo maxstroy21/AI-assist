@@ -67,6 +67,7 @@ class App:
                 gateway=app.gateway,
                 history=HistoryStore(app.db),
                 registry=registry,
+                audit=audit,
                 config=config.agent,
                 timezone=config.app.timezone,
             )
