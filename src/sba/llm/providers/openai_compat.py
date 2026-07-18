@@ -21,7 +21,8 @@ from sba.llm.gateway import ChatMessage, ChatResult, LLMError, StreamEvent, Tool
 log = structlog.get_logger(__name__)
 
 RETRIES = 3
-TIMEOUT = httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=10.0)
+# read=180: CPU-инференс медленный, но 3 минуты без единого байта — это зависание
+TIMEOUT = httpx.Timeout(connect=5.0, read=180.0, write=30.0, pool=10.0)
 
 _DONE = object()  # сентинел конца SSE-потока
 
@@ -89,10 +90,16 @@ class OpenAICompatProvider:
         for attempt in range(RETRIES):
             try:
                 response = await self._client.post("chat/completions", json=payload)
-            except httpx.TransportError as exc:
-                last_error = exc
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last_error = exc  # соединение не установилось — повтор осмыслен
                 await self._backoff(attempt, str(exc))
                 continue
+            except httpx.TransportError as exc:
+                # запрос уже выполнялся (например, таймаут чтения) — повтор
+                # почти наверняка зависнет так же и умножит ожидание
+                raise LLMError(
+                    f"модель не ответила за отведённое время: {exc!r}"
+                ) from exc
             if response.status_code >= 500:
                 last_error = LLMError(f"HTTP {response.status_code}: {response.text[:200]}")
                 await self._backoff(attempt, f"HTTP {response.status_code}")
@@ -117,7 +124,6 @@ class OpenAICompatProvider:
         )
         last_error: Exception | None = None
         for attempt in range(RETRIES):
-            yielded_any = False
             partial_calls: dict[int, dict[str, str]] = {}
             try:
                 async with self._client.stream(
@@ -137,17 +143,19 @@ class OpenAICompatProvider:
                             break
                         text = self._collect_delta(chunk, partial_calls)  # type: ignore[arg-type]
                         if text:
-                            yielded_any = True
                             yield StreamEvent(text=text)
                     calls = self._finalize_calls(partial_calls)
                     if calls:
                         yield StreamEvent(tool_calls=calls)
                     return
+            except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                last_error = exc  # не достучались — повтор осмыслен
             except httpx.TransportError as exc:
-                if yielded_any:
-                    # обрыв посреди генерации — ретраить нельзя, будет дубль текста
-                    raise LLMError(f"соединение оборвалось во время генерации: {exc}") from exc
-                last_error = exc
+                # таймаут чтения или обрыв уже идущего запроса: повтор умножит
+                # ожидание втрое и может задублировать текст
+                raise LLMError(
+                    f"модель не ответила за отведённое время: {exc!r}"
+                ) from exc
             await self._backoff(attempt, str(last_error))
         raise LLMError(f"модель недоступна после {RETRIES} попыток: {last_error}")
 

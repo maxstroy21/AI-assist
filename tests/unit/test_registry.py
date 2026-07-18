@@ -104,6 +104,25 @@ async def test_destructive_requires_confirmation(registry: ToolRegistry, db: Dat
     assert rows[1]["confirmed"] == 1
 
 
+async def test_hanging_tool_interrupted(
+    registry: ToolRegistry, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    import sba.core.tools.registry as registry_module
+
+    monkeypatch.setattr(registry_module, "TOOL_TIMEOUT_SECONDS", 0.05)
+
+    async def hangs(args: BaseModel) -> str:
+        await asyncio.sleep(10)
+        return "никогда"
+
+    registry.register(make_spec(handler=hangs))
+    result = await registry.execute(ToolCall(id="1", name="probe", arguments={"value": "x"}))
+    assert result.error
+    assert "прерван" in result.text
+
+
 async def test_huge_result_truncated(registry: ToolRegistry) -> None:
     async def huge(args: BaseModel) -> str:
         return "x" * 100_000

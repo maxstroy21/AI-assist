@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -21,8 +22,9 @@ from send2trash import send2trash
 from sba.core.tools.spec import RiskLevel, ToolSpec
 from sba.infra.config import FilesConfig
 
-SCAN_LIMIT = 50_000  # предохранитель от многоминутного обхода гигантских деревьев
+SCAN_LIMIT = 50_000  # предохранитель от обхода гигантских деревьев
 FIND_MAX_MATCHES = 30
+SEARCH_TIME_BUDGET = 20.0  # секунд: OneDrive/сетевые папки перечисляются медленно
 
 NO_ROOTS_HINT = (
     "Файловые инструменты не настроены: список разрешённых папок пуст. "
@@ -110,23 +112,31 @@ class FilesToolset:
             lines.append(f"…и ещё {len(entries) - limit}")
         return "\n".join(lines)
 
-    def _search(self, pattern: str, limit: int) -> list[Path]:
-        """Рекурсивный поиск по имени во всех разрешённых корнях (в отдельном потоке)."""
+    def _search(self, pattern: str, limit: int) -> tuple[list[Path], bool]:
+        """Рекурсивный поиск по имени во всех разрешённых корнях (в отдельном потоке).
+
+        Возвращает (совпадения, полный_ли_обход): бюджет времени и лимит
+        просмотренных файлов защищают от бесконечного перечисления
+        OneDrive/сетевых папок.
+        """
         matches: list[Path] = []
         scanned = 0
+        deadline = time.monotonic() + SEARCH_TIME_BUDGET
         pattern_lower = pattern.lower()
         for root in self._roots:
             for dirpath, dirnames, filenames in os.walk(root):
+                if time.monotonic() > deadline:
+                    return matches, False
                 dirnames[:] = [d for d in dirnames if not d.startswith(".")]
                 for filename in filenames:
                     scanned += 1
                     if scanned > SCAN_LIMIT:
-                        return matches
+                        return matches, False
                     if fnmatch.fnmatch(filename.lower(), pattern_lower):
                         matches.append(Path(dirpath) / filename)
                         if len(matches) >= limit:
-                            return matches
-        return matches
+                            return matches, True
+        return matches, True
 
     @staticmethod
     def _normalize_pattern(pattern: str) -> str:
@@ -139,18 +149,23 @@ class FilesToolset:
         if not self._roots:
             return NO_ROOTS_HINT
         pattern = self._normalize_pattern(args.name_pattern.strip().strip("'\""))
-        matches = await asyncio.to_thread(self._search, pattern, FIND_MAX_MATCHES)
-        if not matches and "*" not in pattern and "?" not in pattern:
+        matches, complete = await asyncio.to_thread(self._search, pattern, FIND_MAX_MATCHES)
+        if not matches and complete and "*" not in pattern and "?" not in pattern:
             # точное имя не нашлось — ищем «содержит» (например, «debug» → *debug*)
             pattern = f"*{pattern}*"
-            matches = await asyncio.to_thread(self._search, pattern, FIND_MAX_MATCHES)
+            matches, complete = await asyncio.to_thread(
+                self._search, pattern, FIND_MAX_MATCHES
+            )
         if not matches:
+            note = "" if complete else " (обход прерван по лимиту времени — папки очень большие)"
             return (
                 f"Ничего не найдено по маске {pattern!r} в разрешённых папках "
-                f"({self._roots_summary()})"
+                f"({self._roots_summary()}){note}"
             )
         lines = [f"Найдено {len(matches)}:"] + [str(m) for m in matches]
-        if len(matches) >= FIND_MAX_MATCHES:
+        if not complete:
+            lines.append("…(обход прерван по лимиту времени, результат может быть неполным)")
+        elif len(matches) >= FIND_MAX_MATCHES:
             lines.append("…(показаны первые совпадения, уточните маску)")
         return "\n".join(lines)
 
@@ -160,7 +175,7 @@ class FilesToolset:
         if not target.exists():
             # голое имя без пути — попробуем найти файл сами
             if "/" not in raw and "\\" not in raw:
-                matches = await asyncio.to_thread(self._search, raw, 5)
+                matches, _complete = await asyncio.to_thread(self._search, raw, 5)
                 if len(matches) == 1:
                     target = matches[0]
                 elif matches:

@@ -123,6 +123,18 @@ async def test_4xx_fails_without_retry() -> None:
     assert calls["n"] == 1
 
 
+async def test_read_timeout_fails_fast_without_retry() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        raise httpx.ReadTimeout("модель молчит")
+
+    with pytest.raises(LLMError, match="за отведённое время"):
+        await make_provider(handler).chat("m", MSGS)
+    assert calls["n"] == 1  # зависший запрос не повторяется втрое
+
+
 async def test_connection_error_exhausts_retries(monkeypatch: pytest.MonkeyPatch) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused")

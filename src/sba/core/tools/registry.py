@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 import structlog
@@ -16,6 +17,7 @@ from sba.llm.gateway import ToolCall, ToolSchema
 log = structlog.get_logger(__name__)
 
 RESULT_MAX_CHARS = 6000  # защита контекста модели от гигантских результатов
+TOOL_TIMEOUT_SECONDS = 90.0  # инструмент не должен вешать agent loop
 
 
 class ConfirmationRequired(Exception):
@@ -84,7 +86,14 @@ class ToolRegistry:
             )
             return ToolResult(text=f"Ошибка аргументов: {problems}", error=True)
         try:
-            text = await spec.handler(args)
+            text = await asyncio.wait_for(spec.handler(args), timeout=TOOL_TIMEOUT_SECONDS)
+        except TimeoutError:
+            log.error("tool_timeout", tool=spec.name)
+            return ToolResult(
+                text=f"Инструмент {spec.name} не уложился в "
+                f"{int(TOOL_TIMEOUT_SECONDS)} секунд и был прерван",
+                error=True,
+            )
         except Exception as exc:  # инструмент не должен ронять agent loop
             log.error("tool_failed", tool=spec.name, error=str(exc))
             return ToolResult(text=f"Ошибка выполнения {spec.name}: {exc}", error=True)
