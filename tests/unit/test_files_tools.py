@@ -102,6 +102,18 @@ async def test_find_files_mask(tmp_path: Path) -> None:
     assert "c.txt" not in result
 
 
+async def test_find_files_bare_extension_normalized(tmp_path: Path) -> None:
+    (tmp_path / "debug.log").write_text("x", encoding="utf-8")
+    result = await make_toolset(tmp_path).find_files(FindArgs(name_pattern=".log"))
+    assert "debug.log" in result
+
+
+async def test_find_files_contains_fallback(tmp_path: Path) -> None:
+    (tmp_path / "debug_2026.log").write_text("x", encoding="utf-8")
+    result = await make_toolset(tmp_path).find_files(FindArgs(name_pattern="debug"))
+    assert "debug_2026.log" in result
+
+
 async def test_find_files_nothing(tmp_path: Path) -> None:
     result = await make_toolset(tmp_path).find_files(FindArgs(name_pattern="ghost.md"))
     assert "Ничего не найдено" in result

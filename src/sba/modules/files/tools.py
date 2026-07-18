@@ -128,11 +128,22 @@ class FilesToolset:
                             return matches
         return matches
 
+    @staticmethod
+    def _normalize_pattern(pattern: str) -> str:
+        # «.log» означает «файлы с расширением .log», а не файл с именем «.log»
+        if pattern.startswith(".") and "*" not in pattern and "?" not in pattern:
+            return "*" + pattern
+        return pattern
+
     async def find_files(self, args: FindArgs) -> str:
         if not self._roots:
             return NO_ROOTS_HINT
-        pattern = args.name_pattern.strip().strip("'\"")
+        pattern = self._normalize_pattern(args.name_pattern.strip().strip("'\""))
         matches = await asyncio.to_thread(self._search, pattern, FIND_MAX_MATCHES)
+        if not matches and "*" not in pattern and "?" not in pattern:
+            # точное имя не нашлось — ищем «содержит» (например, «debug» → *debug*)
+            pattern = f"*{pattern}*"
+            matches = await asyncio.to_thread(self._search, pattern, FIND_MAX_MATCHES)
         if not matches:
             return (
                 f"Ничего не найдено по маске {pattern!r} в разрешённых папках "
