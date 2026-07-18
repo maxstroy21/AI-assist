@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -18,6 +20,9 @@ from send2trash import send2trash
 
 from sba.core.tools.spec import RiskLevel, ToolSpec
 from sba.infra.config import FilesConfig
+
+SCAN_LIMIT = 50_000  # предохранитель от многоминутного обхода гигантских деревьев
+FIND_MAX_MATCHES = 30
 
 NO_ROOTS_HINT = (
     "Файловые инструменты не настроены: список разрешённых папок пуст. "
@@ -33,6 +38,12 @@ class PathArgs(BaseModel):
 class ListArgs(BaseModel):
     path: str = Field(description="Путь к папке (внутри разрешённых папок)")
     pattern: str = Field(default="*", description="Маска имени, например *.pdf")
+
+
+class FindArgs(BaseModel):
+    name_pattern: str = Field(
+        description="Имя файла или маска, например: отчёт.docx или *.log"
+    )
 
 
 class FilesToolset:
@@ -99,23 +110,77 @@ class FilesToolset:
             lines.append(f"…и ещё {len(entries) - limit}")
         return "\n".join(lines)
 
+    def _search(self, pattern: str, limit: int) -> list[Path]:
+        """Рекурсивный поиск по имени во всех разрешённых корнях (в отдельном потоке)."""
+        matches: list[Path] = []
+        scanned = 0
+        pattern_lower = pattern.lower()
+        for root in self._roots:
+            for dirpath, dirnames, filenames in os.walk(root):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                for filename in filenames:
+                    scanned += 1
+                    if scanned > SCAN_LIMIT:
+                        return matches
+                    if fnmatch.fnmatch(filename.lower(), pattern_lower):
+                        matches.append(Path(dirpath) / filename)
+                        if len(matches) >= limit:
+                            return matches
+        return matches
+
+    async def find_files(self, args: FindArgs) -> str:
+        if not self._roots:
+            return NO_ROOTS_HINT
+        pattern = args.name_pattern.strip().strip("'\"")
+        matches = await asyncio.to_thread(self._search, pattern, FIND_MAX_MATCHES)
+        if not matches:
+            return (
+                f"Ничего не найдено по маске {pattern!r} в разрешённых папках "
+                f"({self._roots_summary()})"
+            )
+        lines = [f"Найдено {len(matches)}:"] + [str(m) for m in matches]
+        if len(matches) >= FIND_MAX_MATCHES:
+            lines.append("…(показаны первые совпадения, уточните маску)")
+        return "\n".join(lines)
+
     async def read_document(self, args: PathArgs) -> str:
-        target = self._resolve(args.path)
+        raw = args.path.strip().strip("'\"")
+        target = self._resolve(raw)
         if not target.exists():
-            return f"Файл не существует: {target}"
+            # голое имя без пути — попробуем найти файл сами
+            if "/" not in raw and "\\" not in raw:
+                matches = await asyncio.to_thread(self._search, raw, 5)
+                if len(matches) == 1:
+                    target = matches[0]
+                elif matches:
+                    return (
+                        "Нашёл несколько файлов с таким именем — уточните путь:\n"
+                        + "\n".join(str(m) for m in matches)
+                    )
+                else:
+                    return (
+                        f"Файл {raw!r} не найден в разрешённых папках "
+                        f"({self._roots_summary()})"
+                    )
+            else:
+                return f"Файл не существует: {target}"
         if target.is_dir():
             return f"{target} — папка; используйте list_files"
-        raw = await asyncio.to_thread(target.read_bytes)
-        if b"\x00" in raw[:1024]:
+        raw_bytes = await asyncio.to_thread(target.read_bytes)
+        if b"\x00" in raw_bytes[:1024]:
             return (
                 f"{target.name} — не текстовый файл. Чтение PDF/DOCX/XLSX "
                 "появится в следующих версиях (RAG, Sprint 4)."
             )
-        text = raw.decode("utf-8", errors="replace")
+        text = raw_bytes.decode("utf-8", errors="replace")
         limit = self._config.max_read_chars
+        header = f"Файл: {target}\n\n"
         if len(text) > limit:
-            return f"{text[:limit]}\n…(показаны первые {limit} символов из {len(text)})"
-        return text
+            return (
+                f"{header}{text[:limit]}\n"
+                f"…(показаны первые {limit} символов из {len(text)})"
+            )
+        return header + text
 
     async def delete_file(self, args: PathArgs) -> str:
         target = self._resolve(args.path)
@@ -141,8 +206,18 @@ class FilesToolset:
                 handler=self.list_files,  # type: ignore[arg-type]
             ),
             ToolSpec(
+                name="find_files",
+                description="Найти файл по имени или маске во всех разрешённых папках, "
+                "включая подпапки",
+                args_schema=FindArgs,
+                risk=RiskLevel.READ,
+                module="files",
+                handler=self.find_files,  # type: ignore[arg-type]
+            ),
+            ToolSpec(
                 name="read_document",
-                description="Прочитать текстовый файл (txt, md, csv, код)",
+                description="Прочитать текстовый файл (txt, md, csv, код). Если задано "
+                "только имя без пути — файл ищется автоматически",
                 args_schema=PathArgs,
                 risk=RiskLevel.READ,
                 module="files",

@@ -4,7 +4,7 @@ import pytest
 
 import sba.modules.files.tools as files_tools
 from sba.infra.config import FilesConfig
-from sba.modules.files.tools import FilesToolset, ListArgs, PathArgs
+from sba.modules.files.tools import FilesToolset, FindArgs, ListArgs, PathArgs
 
 
 def make_toolset(tmp_path: Path, **overrides) -> FilesToolset:
@@ -83,6 +83,47 @@ async def test_read_binary_refused(tmp_path: Path) -> None:
     (tmp_path / "app.bin").write_bytes(b"\x00\x01\x02data")
     result = await make_toolset(tmp_path).read_document(PathArgs(path="app.bin"))
     assert "не текстовый" in result
+
+
+async def test_find_files_recursive(tmp_path: Path) -> None:
+    nested = tmp_path / "проекты" / "логи"
+    nested.mkdir(parents=True)
+    (nested / "debug.log").write_text("лог", encoding="utf-8")
+    result = await make_toolset(tmp_path).find_files(FindArgs(name_pattern="debug.log"))
+    assert str(nested / "debug.log") in result
+
+
+async def test_find_files_mask(tmp_path: Path) -> None:
+    (tmp_path / "a.log").write_text("x", encoding="utf-8")
+    (tmp_path / "b.log").write_text("x", encoding="utf-8")
+    (tmp_path / "c.txt").write_text("x", encoding="utf-8")
+    result = await make_toolset(tmp_path).find_files(FindArgs(name_pattern="*.log"))
+    assert "a.log" in result and "b.log" in result
+    assert "c.txt" not in result
+
+
+async def test_find_files_nothing(tmp_path: Path) -> None:
+    result = await make_toolset(tmp_path).find_files(FindArgs(name_pattern="ghost.md"))
+    assert "Ничего не найдено" in result
+
+
+async def test_read_bare_name_auto_found_in_subfolder(tmp_path: Path) -> None:
+    nested = tmp_path / "глубоко" / "внутри"
+    nested.mkdir(parents=True)
+    (nested / "заметка.md").write_text("важный текст", encoding="utf-8")
+    result = await make_toolset(tmp_path).read_document(PathArgs(path="заметка.md"))
+    assert "важный текст" in result
+    assert str(nested / "заметка.md") in result  # видно, какой файл прочитан
+
+
+async def test_read_bare_name_multiple_matches_asks_to_clarify(tmp_path: Path) -> None:
+    for sub in ("один", "два"):
+        folder = tmp_path / sub
+        folder.mkdir()
+        (folder / "отчёт.txt").write_text("x", encoding="utf-8")
+    result = await make_toolset(tmp_path).read_document(PathArgs(path="отчёт.txt"))
+    assert "несколько" in result
+    assert "один" in result and "два" in result
 
 
 async def test_delete_uses_trash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
