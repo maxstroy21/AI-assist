@@ -1,0 +1,3332 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Путеводитель по проекту — локальный AI-ассистент</title>
+
+<style>
+:root{
+  --paper:#f6f3ec; --surface:#fffefb; --ink:#20232b; --muted:#5b6068;
+  --faint:#e7e2d6; --hair:#ded8ca; --accent:#0c7c6f; --accent-ink:#0a6a5e;
+  --accent-soft:rgba(12,124,111,.10); --amber:#a86a12; --amber-soft:rgba(168,106,18,.10);
+  --diagram-bg:#fbfaf6; --diagram-bd:#e6e1d4; --code-bg:#f0ece1; --sel:rgba(12,124,111,.18);
+  --serif:"Palatino Linotype","Book Antiqua",Palatino,"Iowan Old Style",Georgia,"Times New Roman",serif;
+  --sans:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --mono:"Cascadia Code","JetBrains Mono","SF Mono",Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#15171d; --surface:#1c1f27; --ink:#e7e6e0; --muted:#9aa0ab;
+    --faint:#2c303a; --hair:#333844; --accent:#45c3b1; --accent-ink:#5bd0bf;
+    --accent-soft:rgba(69,195,177,.14); --amber:#d99b3f; --amber-soft:rgba(217,155,63,.13);
+    --diagram-bg:#f4f2ec; --diagram-bd:#d8d3c6; --code-bg:#242833; --sel:rgba(69,195,177,.22);
+  }
+}
+:root[data-theme="light"]{
+  --paper:#f6f3ec; --surface:#fffefb; --ink:#20232b; --muted:#5b6068;
+  --faint:#e7e2d6; --hair:#ded8ca; --accent:#0c7c6f; --accent-ink:#0a6a5e;
+  --accent-soft:rgba(12,124,111,.10); --amber:#a86a12; --amber-soft:rgba(168,106,18,.10);
+  --diagram-bg:#fbfaf6; --diagram-bd:#e6e1d4; --code-bg:#f0ece1; --sel:rgba(12,124,111,.18);
+}
+:root[data-theme="dark"]{
+  --paper:#15171d; --surface:#1c1f27; --ink:#e7e6e0; --muted:#9aa0ab;
+  --faint:#2c303a; --hair:#333844; --accent:#45c3b1; --accent-ink:#5bd0bf;
+  --accent-soft:rgba(69,195,177,.14); --amber:#d99b3f; --amber-soft:rgba(217,155,63,.13);
+  --diagram-bg:#f4f2ec; --diagram-bd:#d8d3c6; --code-bg:#242833; --sel:rgba(69,195,177,.22);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:17px;line-height:1.72;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+::selection{background:var(--sel)}
+#progress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--accent);z-index:60;transition:width .1s linear}
+
+/* --- layout --- */
+.shell{display:grid;grid-template-columns:300px minmax(0,1fr);max-width:1320px;margin:0 auto}
+.sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--surface);
+  border-right:1px solid var(--faint);padding:26px 18px 40px;scrollbar-width:thin}
+.brand{display:flex;align-items:baseline;gap:10px;padding:0 8px 4px}
+.brand-mark{font-family:var(--serif);font-size:1.5rem;color:var(--accent);line-height:1}
+.brand-txt{font-family:var(--serif);font-size:1.06rem;font-weight:600;letter-spacing:.01em}
+.brand-sub{padding:0 8px 18px;color:var(--muted);font-size:.78rem;letter-spacing:.02em}
+.nav-head{display:flex;align-items:center;justify-content:space-between;padding:14px 8px 8px;
+  margin-top:6px;border-top:1px solid var(--faint)}
+.nav-head span{font-size:.7rem;text-transform:uppercase;letter-spacing:.14em;color:var(--muted)}
+.theme-btn{appearance:none;border:1px solid var(--faint);background:transparent;color:var(--muted);
+  border-radius:7px;padding:5px 9px;font:inherit;font-size:.76rem;cursor:pointer;display:flex;gap:6px;align-items:center}
+.theme-btn:hover{border-color:var(--accent);color:var(--accent)}
+nav{display:flex;flex-direction:column;gap:1px;margin-top:4px}
+.nav-link{display:flex;gap:11px;align-items:flex-start;padding:7px 9px;border-radius:8px;
+  color:var(--ink);text-decoration:none;font-size:.9rem;line-height:1.35;transition:background .12s,color .12s}
+.nav-link:hover{background:var(--accent-soft)}
+.nav-link.active{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
+.nav-link.active .nav-num{background:var(--accent);color:#fff;border-color:var(--accent)}
+.nav-num{flex:none;width:23px;height:23px;border-radius:6px;border:1px solid var(--hair);
+  display:grid;place-items:center;font-size:.76rem;font-weight:600;color:var(--muted);
+  font-variant-numeric:tabular-nums;font-family:var(--mono)}
+.nav-num--io{color:var(--accent);border-color:transparent;font-family:var(--sans)}
+.nav-title{padding-top:1px}
+
+/* --- content --- */
+.main{min-width:0;padding:0}
+.content{max-width:75ch;margin:0 auto;padding:64px 40px 120px}
+h1,h2,h3{font-family:var(--serif);color:var(--ink);text-wrap:balance;line-height:1.22}
+.content>h1{font-size:2.15rem;font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+/* chapter separators: h1 that carries an id (from markdown attr_list) */
+.content>h1[id]:not(#top){margin-top:14px;padding-top:44px;border-top:1px solid var(--faint);
+  position:relative;scroll-margin-top:70px}
+.content>h1[id]:not(#top)::before{content:"";position:absolute;top:-1px;left:0;width:56px;height:3px;
+  background:var(--accent);border-radius:2px}
+h2{font-size:1.4rem;font-weight:600;margin:2.4em 0 .5em;scroll-margin-top:70px}
+h3{font-size:1.12rem;font-weight:600;margin:1.9em 0 .4em;color:var(--ink)}
+.content>h1#top+*{margin-top:0}
+p{margin:0 0 1.05em}
+a{color:var(--accent-ink);text-decoration:none;border-bottom:1px solid var(--accent-soft)}
+a:hover{border-bottom-color:var(--accent)}
+strong{font-weight:650;color:var(--ink)}
+ul,ol{margin:0 0 1.15em;padding-left:1.35em}
+li{margin:.3em 0}
+li::marker{color:var(--accent)}
+hr{border:0;border-top:1px solid var(--faint);margin:2.6em 0}
+blockquote{margin:1.4em 0;padding:.2em 1.2em;border-left:3px solid var(--amber);
+  background:var(--amber-soft);border-radius:0 10px 10px 0;color:var(--ink)}
+blockquote p:last-child{margin-bottom:.4em}
+blockquote p:first-child{margin-top:.4em}
+
+/* inline + block code */
+code{font-family:var(--mono);font-size:.86em;background:var(--code-bg);padding:.12em .4em;
+  border-radius:5px;color:var(--ink)}
+pre{background:var(--code-bg);border:1px solid var(--faint);border-radius:12px;padding:16px 18px;
+  overflow-x:auto;margin:1.3em 0;line-height:1.55}
+pre code{background:none;padding:0;font-size:.84rem}
+
+/* tables */
+.table-wrap{overflow-x:auto;margin:1.4em 0;border:1px solid var(--faint);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--faint);vertical-align:top}
+thead th{background:var(--accent-soft);color:var(--accent-ink);font-weight:650;font-family:var(--sans);
+  white-space:nowrap;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--accent-soft)}
+td code{white-space:nowrap}
+
+/* mermaid diagrams on a light card, legible in both themes */
+.diagram{margin:1.6em 0;background:var(--diagram-bg);border:1px solid var(--diagram-bd);
+  border-radius:14px;padding:20px 16px;overflow-x:auto}
+.diagram .mermaid{display:flex;justify-content:center;min-width:0}
+.diagram .mermaid svg{max-width:100%;height:auto}
+
+/* mobile top bar */
+.topbar{display:none}
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .sidebar{position:fixed;z-index:50;top:0;left:0;width:290px;max-width:86vw;
+    transform:translateX(-100%);transition:transform .25s ease;box-shadow:0 0 40px rgba(0,0,0,.25)}
+  .sidebar.open{transform:translateX(0)}
+  .topbar{display:flex;position:sticky;top:0;z-index:40;align-items:center;gap:12px;
+    background:var(--surface);border-bottom:1px solid var(--faint);padding:11px 16px}
+  .topbar .burger{appearance:none;border:1px solid var(--faint);background:transparent;color:var(--ink);
+    border-radius:8px;width:38px;height:36px;font-size:1.1rem;cursor:pointer}
+  .topbar .tb-title{font-family:var(--serif);font-weight:600;font-size:.98rem}
+  .scrim{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:45}
+  .scrim.show{display:block}
+  .content{padding:36px 22px 90px}
+  .content>h1{font-size:1.75rem}
+  body{font-size:16px}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+</style>
+
+</head>
+<body>
+<div id="progress"></div>
+<div class="scrim"></div>
+<div class="shell">
+
+<aside class="sidebar" id="sidebar">
+  <div class="brand"><span class="brand-mark">✦</span><span class="brand-txt">Вторая голова</span></div>
+  <div class="brand-sub">Локальный AI-ассистент · книга проекта</div>
+  <div class="nav-head"><span>Содержание</span>
+    <button class="theme-btn" id="themeBtn" aria-label="Переключить тему">☾ <span>Тёмная</span></button>
+  </div>
+  <nav>
+<a class="nav-link" href="#top"><span class="nav-num nav-num--io">✦</span><span class="nav-title">Введение</span></a>
+<a class="nav-link" href="#ch-1"><span class="nav-num">1</span><span class="nav-title">Что вообще такое AI-ассистент?</span></a>
+<a class="nav-link" href="#ch-2"><span class="nav-num">2</span><span class="nav-title">Как работает локальная LLM?</span></a>
+<a class="nav-link" href="#ch-3"><span class="nav-num">3</span><span class="nav-title">Как агент принимает решения?</span></a>
+<a class="nav-link" href="#ch-4"><span class="nav-num">4</span><span class="nav-title">Память</span></a>
+<a class="nav-link" href="#ch-5"><span class="nav-num">5</span><span class="nav-title">Документы</span></a>
+<a class="nav-link" href="#ch-6"><span class="nav-num">6</span><span class="nav-title">Векторная база</span></a>
+<a class="nav-link" href="#ch-7"><span class="nav-num">7</span><span class="nav-title">Переиндексация</span></a>
+<a class="nav-link" href="#ch-8"><span class="nav-num">8</span><span class="nav-title">Telegram</span></a>
+<a class="nav-link" href="#ch-9"><span class="nav-num">9</span><span class="nav-title">Задачи</span></a>
+<a class="nav-link" href="#ch-10"><span class="nav-num">10</span><span class="nav-title">Архитектура проекта</span></a>
+<a class="nav-link" href="#ch-11"><span class="nav-num">11</span><span class="nav-title">Хранение данных</span></a>
+<a class="nav-link" href="#ch-12"><span class="nav-num">12</span><span class="nav-title">Что происходит при типичных сценариях</span></a>
+<a class="nav-link" href="#ch-13"><span class="nav-num">13</span><span class="nav-title">Производительность</span></a>
+<a class="nav-link" href="#ch-14"><span class="nav-num">14</span><span class="nav-title">Стоимость эксплуатации</span></a>
+<a class="nav-link" href="#ch-15"><span class="nav-num">15</span><span class="nav-title">FAQ</span></a>
+<a class="nav-link" href="#ch-16"><span class="nav-num">16</span><span class="nav-title">Глоссарий</span></a>
+<a class="nav-link" href="#conclusion"><span class="nav-num nav-num--io">✦</span><span class="nav-title">Заключение</span></a>
+  </nav>
+</aside>
+
+  <div class="main">
+    <div class="topbar"><button class="burger" aria-label="Открыть навигацию">☰</button><span class="tb-title">Путеводитель по проекту</span></div>
+    <article class="content">
+<h1 id="top">Путеводитель по проекту: твой локальный AI-ассистент</h1>
+<blockquote>
+<p><strong>Что это за документ.</strong> Это не проектная спецификация и не инструкция по сборке.
+Это учебник. Его цель — не спроектировать систему (она уже спроектирована в
+<code>docs/01</code>–<code>docs/06</code>), а <strong>сделать так, чтобы ты понимал каждую её деталь</strong>: что
+мы строим, зачем нужен каждый компонент, как он работает, почему выбран именно
+он, какие есть альтернативы и на какие компромиссы мы пошли.</p>
+<p>После прочтения ты должен уметь на равных обсуждать систему с разработчиком или
+с LLM: не «кажется, тут какая-то векторная база», а «у нас Qdrant в embedded-режиме,
+потому что он даёт один и тот же клиентский API при переезде на сервер, и нативный
+гибридный поиск, который на смешанном ру/en корпусе точнее чистой семантики».</p>
+</blockquote>
+<h2>Как читать эту книгу</h2>
+<p>Каждая большая глава построена по одной схеме — семь ступеней от простого к сложному:</p>
+<ol>
+<li><strong>Простое объяснение</strong> — идея на пальцах, аналогией, без единого технического термина.</li>
+<li><strong>Как это устроено технически</strong> — механика, уже с терминами (все они есть в глоссарии, глава 16).</li>
+<li><strong>Как это сделано (или будет сделано) в нашем проекте</strong> — привязка к твоему железу,
+   твоему конфигу, твоему коду. Именно эта ступень отличает учебник от статьи в интернете.</li>
+<li><strong>Альтернативы</strong> — что ещё бывает и чем оно отличается.</li>
+<li><strong>Плюсы и минусы</strong> нашего выбора — включая скрытые недостатки, о которых обычно молчат.</li>
+<li><strong>Какие решения предстоит принять тебе</strong> — развилки, где выбор за владельцем.</li>
+<li><strong>Вопросы, которые возникнут позже</strong> — то, обо что ты споткнёшься через полгода;
+   лучше знать заранее.</li>
+</ol>
+<p>Читать можно подряд (главы выстроены по нарастанию), а можно как справочник —
+через оглавление. Возвращаться сюда во время разработки — нормально и правильно:
+это твой главный источник знаний о системе, и он должен расти вместе с ней.</p>
+<h2>Где ты сейчас находишься</h2>
+<p>Чтобы учебник не был абстрактным, вот точная точка на карте (по состоянию проекта):</p>
+<ul>
+<li><strong>Готово:</strong> скелет платформы (Sprint 0), Telegram + локальная LLM (Sprint 1),
+  инструменты и агентность (Sprint 2), память v1 (Sprint 3).</li>
+<li><strong>Следующий шаг:</strong> Sprint 4 — RAG (поиск по документам). Самый тяжёлый спринт.</li>
+<li><strong>Железо:</strong> ноутбук, <strong>только CPU</strong> (i7-1165G7, 16 ГБ RAM), Windows. Дискретной
+  видеокарты нет. Это не мелочь: половина архитектурных решений продиктована именно
+  этим фактом, и учебник будет постоянно к нему возвращаться.</li>
+<li><strong>Мозг:</strong> Ollama на <code>localhost:11434</code>, модель <code>qwen2.5:7b-instruct</code> для диалога,
+  <code>qwen2.5:3b-instruct</code> для фоновых задач.</li>
+</ul>
+<h1 id="ch-1">Глава 1. Что вообще такое AI-ассистент?</h1>
+<h2>1.1. Простое объяснение</h2>
+<p>Представь разницу между <strong>справочным бюро по телефону</strong> и <strong>личным помощником</strong>.</p>
+<p>Справочное бюро отвечает на вопросы. Ты звонишь, спрашиваешь «сколько времени в
+Токио», тебе говорят — и на этом всё. Каждый звонок начинается с чистого листа:
+бюро не помнит, что ты звонил вчера, не может само перезвонить тебе завтра, не
+пойдёт вместо тебя на почту. Оно только <em>говорит</em>.</p>
+<p>Личный помощник — другое. Он тебя знает: помнит, что твою жену зовут так-то, что
+ты не любишь совещания по утрам, что проект «Экспедиция» для тебя сейчас главный.
+Он <em>делает</em>: находит нужный документ в твоих папках, ставит задачу, сам напоминает
+о ней в нужный момент, разбирает завал в «Загрузках». И он живёт рядом постоянно, а
+не оживает только когда ты набрал номер.</p>
+<p><strong>ChatGPT — это справочное бюро.</strong> Гениальное, эрудированное, но справочное: без
+твоей памяти, без доступа к твоим файлам, без права что-либо сделать в твоём мире.</p>
+<p><strong>Наш проект — это личный помощник.</strong> Причём такой, который живёт на <em>твоём</em>
+компьютере, а не на чужом сервере, и постепенно становится твоей «второй головой».</p>
+<p>Ключевая мысль, которую надо усвоить с самого начала: <strong>языковая модель (та самая,
+что «умная») — это только один орган ассистента, его речевой центр. Сам ассистент —
+это целый организм вокруг этого органа.</strong> Речевой центр не имеет памяти, не видит
+твоих файлов, не умеет ждать до понедельника. Всё это — другие органы, которые мы и
+строим.</p>
+<h2>1.2. Как это устроено технически</h2>
+<p>Введём три понятия и разведём их, потому что новички их путают, и из-за этой путаницы
+рождаются неверные ожидания.</p>
+<p><strong>LLM (Large Language Model, большая языковая модель).</strong> Функция, которая на вход
+получает текст и предсказывает продолжение. Она не «знает» и не «помнит» в бытовом
+смысле — она статистически продолжает то, что ей дали. Дай ей пустой лист — она
+ничего не «вспомнит» о вчера, потому что вчера для неё не существует. Это чистая,
+не имеющая состояния (stateless) функция «текст → текст».</p>
+<p><strong>Обёртка-чат (как ChatGPT).</strong> LLM плюс минимальный слой вокруг: веб-интерфейс,
+хранение текущей переписки, чтобы модель «помнила» в пределах одного окна. Всё.
+Как только окно закрыто или переписка стала слишком длинной — память теряется.</p>
+<p><strong>AI-агент.</strong> LLM, которой дали три вещи, превращающие «говорящую» модель в
+«действующую»:</p>
+<ol>
+<li><strong>Инструменты (tools)</strong> — функции, которые модель может <em>вызвать</em>: «найди файл»,
+   «создай задачу», «поставь напоминание». Модель не выполняет их сама — она <em>просит</em>
+   систему выполнить, а система возвращает результат.</li>
+<li><strong>Память</strong> — хранилище, которое переживает перезапуск: факты, предпочтения,
+   история. Модель на каждом шаге получает нужную выжимку из этого хранилища.</li>
+<li><strong>Цикл (agent loop)</strong> — механизм, который позволяет модели действовать не в один
+   ход, а в несколько: подумала → вызвала инструмент → увидела результат → подумала
+   снова → вызвала следующий → …→ дала финальный ответ.</li>
+</ol>
+<p><strong>Почему агент — это не «просто LLM»?</strong> Потому что интеллект (LLM) и способность
+действовать в мире (инструменты, память, цикл) — разные вещи. Мозг в банке очень
+умён, но без рук, глаз и памяти он ничего не изменит в комнате. Агент — это мозг,
+которому приделали руки, глаза и записную книжку. И огромная часть инженерной работы
+(и этого учебника) — не про мозг, а про руки, глаза и записную книжку.</p>
+<h2>1.3. Из каких частей состоит наш ассистент</h2>
+<p>Вот органы нашего организма и за что каждый отвечает. Подробно — в главе 10, здесь —
+общая карта, чтобы дальнейшие главы ложились на неё.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Орган</th>
+<th>Роль в аналогии</th>
+<th>Что делает</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Каналы</strong> (Telegram, консоль, web)</td>
+<td>Уши и рот</td>
+<td>Принимают твоё сообщение, отдают ответ</td>
+</tr>
+<tr>
+<td><strong>Router</strong> (маршрутизатор)</td>
+<td>Секретарь на входе</td>
+<td>Приводит любое сообщение к единому виду, ведёт сессии</td>
+</tr>
+<tr>
+<td><strong>Orchestrator</strong> (агентный цикл)</td>
+<td>Кора головного мозга</td>
+<td>Решает, что делать: ответить или вызвать инструмент</td>
+</tr>
+<tr>
+<td><strong>LLM Gateway</strong></td>
+<td>Речевой центр + переводчик</td>
+<td>Единая дверь к языковой модели (Ollama)</td>
+</tr>
+<tr>
+<td><strong>Context Builder</strong></td>
+<td>Рабочий стол мышления</td>
+<td>Собирает то, о чём модель будет думать: промпт</td>
+</tr>
+<tr>
+<td><strong>Tool Registry</strong></td>
+<td>Ящик с инструментами</td>
+<td>Хранит список доступных действий и их правила</td>
+</tr>
+<tr>
+<td><strong>Memory</strong></td>
+<td>Долговременная память</td>
+<td>Факты, предпочтения, история</td>
+</tr>
+<tr>
+<td><strong>RAG + Indexer</strong></td>
+<td>Зрение по документам</td>
+<td>Ищет смысл в твоих файлах</td>
+</tr>
+<tr>
+<td><strong>Tasks + Reminders + Scheduler</strong></td>
+<td>Ежедневник и будильник</td>
+<td>Помнит задачи, приходит вовремя</td>
+</tr>
+</tbody>
+</table></div>
+<p>Важнейший архитектурный принцип: <strong>эти органы разделены жёсткими границами</strong>.
+Речевой центр (LLM) не лезет напрямую в память; каналы ничего не знают об устройстве
+мозга. Зачем такая строгость — целиком глава 10, но запомни термин: у нас <strong>модульный
+монолит</strong>. Один процесс (как один организм), но внутри — чётко разграниченные органы.</p>
+<h2>1.4. Что происходит после того, как я отправил сообщение</h2>
+<p>Это самая важная схема первой главы — полный жизненный цикл одного запроса. Пример:
+ты пишешь в Telegram «<em>Напомни завтра купить билеты</em>».</p>
+<div class="diagram"><pre class="mermaid">flowchart TD
+    U[&quot;Ты пишешь в Telegram:&lt;br/&gt;«Напомни завтра купить билеты»&quot;] --&gt; TG
+    TG[&quot;Telegram Gateway&lt;br/&gt;1. Проверяет: это точно ты? (whitelist)&lt;br/&gt;2. Приводит к IncomingMessage&quot;] --&gt; R
+    R[&quot;Router&lt;br/&gt;Находит/создаёт твою сессию,&lt;br/&gt;сохраняет сообщение в историю&quot;] --&gt; A
+    A[&quot;Orchestrator (агентный цикл)&lt;br/&gt;Начинает думать над запросом&quot;] --&gt; CB
+    CB[&quot;Context Builder&lt;br/&gt;Собирает промпт: system-инструкция +&lt;br/&gt;твои предпочтения + свежая история +&lt;br/&gt;релевантные факты из памяти&quot;] --&gt; LLM1
+    LLM1[&quot;LLM Gateway → Ollama → qwen2.5&lt;br/&gt;«Вот запрос и список инструментов.&lt;br/&gt;Что делать?»&quot;] --&gt; DEC{Что решила модель?}
+    DEC --&gt;|&quot;просто ответить текстом&quot;| OUT
+    DEC --&gt;|&quot;вызвать инструмент&lt;br/&gt;create_reminder(...)&quot;| RISK{Уровень риска&lt;br/&gt;инструмента}
+    RISK --&gt;|&quot;read / write&quot;| EXEC[&quot;Выполнить инструмент&lt;br/&gt;+ записать в audit log&quot;]
+    RISK --&gt;|&quot;destructive&quot;| CONFIRM[&quot;Спросить подтверждение&lt;br/&gt;у тебя в чате&quot;]
+    CONFIRM --&gt;|да| EXEC
+    EXEC --&gt; APPEND[&quot;Результат инструмента&lt;br/&gt;кладём обратно в контекст&quot;]
+    APPEND --&gt; GUARD{Лимит шагов/&lt;br/&gt;времени исчерпан?}
+    GUARD --&gt;|нет| LLM1
+    GUARD --&gt;|да| OUT
+    OUT[&quot;Финальный текст:&lt;br/&gt;«Поставил напоминание на завтра»&quot;] --&gt; R2[&quot;Router доставляет ответ&quot;]
+    R2 --&gt; TG2[&quot;Telegram показывает тебе ответ&quot;]
+    A -.-&gt;|&quot;после ответа, в фоне&quot;| EV[&quot;Событие message_processed:&lt;br/&gt;память подумает, не запомнить ли&lt;br/&gt;что-то из этого разговора&quot;]
+</pre></div>
+<p>Прочитай эту схему медленно — в ней вся книга в миниатюре. Обрати внимание на четыре
+вещи, каждой из которых посвящена отдельная глава дальше:</p>
+<ul>
+<li><strong>Между «твоим сообщением» и «мозгом» есть слои</strong> (Gateway, Router). Мозг никогда
+  не общается с Telegram напрямую. → глава 8, глава 10.</li>
+<li><strong>Модель не отвечает сразу — сначала решает, нужен ли инструмент.</strong> И может вызвать
+  несколько по кругу. Это и есть «агентность». → глава 3.</li>
+<li><strong>У инструментов есть уровни риска.</strong> Поставить напоминание — безопасно. Удалить
+  файлы — только с твоего подтверждения. → глава 3, глава 10.</li>
+<li><strong>После ответа что-то происходит «в фоне».</strong> Ответ уже у тебя, а система ещё
+  дособирает память. Диалог никогда не ждёт фоновых задач. → глава 4.</li>
+</ul>
+<h2>1.5. Альтернативы: а можно было проще?</h2>
+<p>Да, и полезно понимать, от чего мы отказались и почему.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Подход</th>
+<th>Что это</th>
+<th>Почему не подошло нам</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Просто ChatGPT/Claude</strong></td>
+<td>Облачный чат</td>
+<td>Нет твоей памяти, нет доступа к файлам, данные уходят на чужой сервер</td>
+</tr>
+<tr>
+<td><strong>Готовый «комбайн»</strong> (LangChain-агент из 50 строк)</td>
+<td>Собрать агента из готового фреймворка</td>
+<td>Быстрый прототип, но абстракции «протекают» там, где у нас специфика (слабая локальная модель, уровни риска, своя модель памяти); плюс постоянные breaking changes фреймворка</td>
+</tr>
+<tr>
+<td><strong>Микросервисы</strong></td>
+<td>Каждый орган — отдельный процесс</td>
+<td>Вся цена (сеть, оркестрация, отладка) остаётся, вся выгода (независимый деплой командами) на личной машине отсутствует</td>
+</tr>
+<tr>
+<td><strong>Наш выбор: модульный монолит</strong></td>
+<td>Один процесс, жёсткие границы модулей</td>
+<td>Быстро завести, легко отлаживать, дёшево по ресурсам, и при этом можно расти — любой модуль выносится в отдельный процесс, когда реально понадобится</td>
+</tr>
+</tbody>
+</table></div>
+<h2>1.6. Плюсы и минусы того, что мы строим</h2>
+<p><strong>Плюсы:</strong></p>
+<ul>
+<li>Данные не покидают твою машину (Local First) — приватность по устройству, а не по обещанию.</li>
+<li>Ассистент растёт под тебя: память, привычки, твой корпус документов.</li>
+<li>Нет абонентской платы и лимитов облака; работает без интернета (кроме доставки в Telegram).</li>
+</ul>
+<p><strong>Минусы (честно):</strong></p>
+<ul>
+<li>Локальная модель слабее облачной — медленнее и чаще ошибается. Половина
+  инженерных решений — это компенсация её слабости (короткие промпты, валидация,
+  разбиение сложного на простое).</li>
+<li>Это <em>твоя</em> система — некому пожаловаться в поддержку; надёжность = наш код + бэкапы.</li>
+<li>Первый запуск и обслуживание требуют участия, хоть мы и делаем всё, чтобы «поставил и забыл».</li>
+</ul>
+<h2>1.7. Какие решения тебе предстоит принять</h2>
+<ul>
+<li><strong>Насколько автономным должен быть ассистент?</strong> Где граница между «делает сам» и
+  «сначала спрашивает»? Мы задали дефолт (destructive — всегда спрашивает), но планку
+  можно двигать.</li>
+<li><strong>Что вообще ему доверить?</strong> Файлы? Почту? Календарь? Каждый источник — это и польза,
+  и поверхность для ошибок модели. Мы включаем возможности по одной, спринтами.</li>
+</ul>
+<h2>1.8. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«А если модель придумает несуществующий файл?» — да, qwen2.5 7B этим грешит; в
+  проекте уже встроены защиты (маркеры 🔧, чистка выдуманных строк, дедуп вызовов).
+  Подробно — глава 3 и глава 15.</li>
+<li>«Можно ли потом переехать в облако/на сервер?» — да, архитектура это предусматривает.
+  Глава 15.</li>
+<li>«Что будет, если два органа захотят одно и то же одновременно?» — на одной машине с
+  одной моделью мы намеренно сериализуем тяжёлое (диалог важнее фоновой индексации).
+  Глава 13.</li>
+</ul>
+<hr>
+<h1 id="ch-2">Глава 2. Как работает локальная LLM?</h1>
+<h2>2.1. Простое объяснение</h2>
+<p>Языковая модель — это <strong>гигантская таблица догадок «что дальше»</strong>, полученная из
+прочтения половины интернета. Ты даёшь ей начало фразы, она предсказывает самое
+вероятное продолжение — слово за словом. «Столица Франции — …» → «Париж», потому что
+в текстах, которые она видела, после этих слов почти всегда шло «Париж».</p>
+<p>Всё, что делает модель, — это раз за разом отвечает на вопрос «какой следующий
+кусочек текста наиболее уместен?». Ответ на твой вопрос, вызов инструмента, перевод —
+всё сводится к этому предсказанию. Магии нет; есть очень хорошо угаданное продолжение.</p>
+<p>«<strong>Локальная</strong>» значит, что эта таблица догадок лежит файлом на твоём диске, и
+считает её твой процессор — а не чужой сервер. Ты ни от кого не зависишь и ничего
+никуда не отправляешь. Плата за это — твой процессор не так быстр, как стойка
+видеокарт в дата-центре, поэтому ответы приходят не мгновенно, а за десятки секунд.</p>
+<h2>2.2. Как это устроено технически</h2>
+<p><strong>Что такое «модель» как файл.</strong> Модель — это набор чисел (<strong>весов</strong>, weights):
+миллиарды коэффициентов гигантской математической функции. «7B» значит 7 миллиардов
+таких чисел. Если хранить каждое число полноценно (16 бит), 7B заняли бы ~14 ГБ. Но
+их <strong>квантуют</strong> — огрубляют до 4 бит на число почти без потери качества, — и файл
+ужимается до <strong>~4.5 ГБ</strong>. Именно такой файл (<code>qwen2.5:7b-instruct</code>, квантование Q4)
+лежит у тебя.</p>
+<p><strong>Где она хранится.</strong> Ollama складывает модели в свою папку (на Windows —
+<code>C:\Users\&lt;ты&gt;\.ollama\models</code>). Один раз скачал (<code>ollama pull ...</code>) — дальше офлайн.</p>
+<p><strong>Сколько занимает памяти.</strong> Чтобы отвечать, модель надо целиком загрузить с диска в
+<strong>оперативную память (RAM)</strong>. 7B в Q4 → <strong>~4.5–5 ГБ RAM</strong>, пока модель «жива». Плюс
+растущий по ходу разговора буфер контекста. На твоих 16 ГБ это комфортно для <em>одной</em>
+модели сразу — отсюда важное следствие (см. 2.4): держим в памяти одну модель, а не три.</p>
+<p><strong>Кто её запускает.</strong> Сам по себе файл весов — мёртвый. Его нужно <em>исполнить</em>:
+загрузить, прогнать через него твой текст, посчитать предсказания. Это делает
+<strong>рантайм</strong> (runtime, «движок инференса»). У тебя рантайм — <strong>Ollama</strong>.</p>
+<p><strong>Что физически происходит, когда ты задаёшь вопрос:</strong></p>
+<div class="diagram"><pre class="mermaid">flowchart LR
+    Q[&quot;Твой текст:&lt;br/&gt;«Столица Франции?»&quot;] --&gt; TOK[&quot;Токенизация:&lt;br/&gt;текст → числа-токены&lt;br/&gt;[&#x27;Столица&#x27;,&#x27; Франции&#x27;,&#x27;?&#x27;]&quot;]
+    TOK --&gt; PREFILL[&quot;Prefill (обработка промпта):&lt;br/&gt;прогнать все токены промпта&lt;br/&gt;через модель разом.&lt;br/&gt;На CPU ≈ 15–40 токенов/с&quot;]
+    PREFILL --&gt; GEN[&quot;Генерация (decode):&lt;br/&gt;предсказать 1 токен → добавить →&lt;br/&gt;предсказать следующий → ...&lt;br/&gt;На CPU ≈ 3–6 токенов/с&quot;]
+    GEN --&gt; DETOK[&quot;Детокенизация:&lt;br/&gt;токены → текст «Париж»&quot;]
+    DETOK --&gt; A[&quot;Ответ&quot;]
+</pre></div>
+<p>Здесь спрятан <strong>самый важный для тебя факт про производительность</strong>. Есть две
+разные стадии, и они идут с разной скоростью:</p>
+<ul>
+<li><strong>Prefill</strong> — «прочитать» весь промпт. Скорость ~15–40 ток/с. Промпт в 2000 токенов
+  → <strong>до минуты только на чтение, прежде чем появится первое слово ответа</strong>.</li>
+<li><strong>Генерация</strong> — «писать» ответ. Скорость ~3–6 ток/с.</li>
+</ul>
+<p>Вывод, который пронизывает весь проект: <strong>длина промпта — главный рычаг скорости</strong>.
+Не потому что «так аккуратнее», а потому что каждая лишняя тысяча токенов промпта —
+это лишние ~30–60 секунд ожидания на твоём CPU. Поэтому в проекте есть жёсткий
+бюджет промпта (~1200–1500 токенов) и фильтрация инструментов — об этом главы 3, 4, 13.</p>
+<p><strong>Что такое «контекст» (context window).</strong> Это максимум токенов, которые модель может
+удержать «в поле зрения» за один вызов — промпт плюс ответ. У qwen2.5 это до 32K
+токенов <em>технически</em>, но на CPU мы намеренно держим гораздо меньше: чем длиннее
+контекст, тем (а) медленнее и (б) хуже модель следует инструкциям. Контекст — это не
+память ассистента (память переживает перезапуск и хранится в базе); контекст — это
+рабочий стол на один вызов. Разницу «контекст ≠ память» разберём в главе 4 — она
+принципиальна.</p>
+<h2>2.3. Ollama, LM Studio, llama.cpp, vLLM, Open WebUI — кто есть кто</h2>
+<p>Новичок путается, потому что все эти слова «про запуск моделей», но они с разных
+этажей. Разложим по полкам.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Инструмент</th>
+<th>Что это по сути</th>
+<th>Кому и когда</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>llama.cpp</strong></td>
+<td>Низкоуровневый движок (библиотека на C++), который собственно и считает модель на CPU/GPU. Фундамент, на котором стоят остальные</td>
+<td>Разработчикам движков; напрямую тебе трогать не нужно</td>
+</tr>
+<tr>
+<td><strong>Ollama</strong></td>
+<td>Удобная обёртка вокруг llama.cpp: скачивание моделей одной командой, автозагрузка/выгрузка из памяти, готовый HTTP-API. <strong>Твой выбор</strong></td>
+<td>Тебе — идеально: поставил, <code>ollama pull</code>, работает как сервис</td>
+</tr>
+<tr>
+<td><strong>LM Studio</strong></td>
+<td>То же, что Ollama, но с графическим окном и «магазином» моделей</td>
+<td>Кто любит кнопки вместо консоли; хорош как «второй рантайм» для проверки</td>
+</tr>
+<tr>
+<td><strong>vLLM</strong></td>
+<td>Промышленный движок для серверов с мощными GPU, заточен на много одновременных пользователей</td>
+<td>Не для тебя: требует GPU и Linux, избыточен для одного человека</td>
+</tr>
+<tr>
+<td><strong>Open WebUI</strong></td>
+<td>Красивый веб-чат поверх Ollama (похож на ChatGPT-интерфейс)</td>
+<td>Если захочется «морду» к Ollama отдельно; нам не нужен — у нас свой web-чат в планах</td>
+</tr>
+</tbody>
+</table></div>
+<p>Обрати внимание: <strong>Ollama, LM Studio и vLLM — конкуренты между собой</strong> (это рантаймы),
+а <strong>llama.cpp под ними</strong> (движок), <strong>Open WebUI над ними</strong> (интерфейс). Мы выбрали
+Ollama как рантайм и пишем свой «организм» вокруг неё.</p>
+<h2>2.4. Как это сделано в нашем проекте</h2>
+<p>Три конкретных решения, все продиктованы твоим железом (CPU-only, 16 ГБ).</p>
+<p><strong>Решение 1. Разные модели на разные роли.</strong> Не одна модель на всё, а «бригада»:</p>
+<pre><code class="language-yaml"># config/models.yaml — реальный фрагмент твоего конфига
+roles:
+  chat:       { runtime: ollama, model: &quot;qwen2.5:7b-instruct&quot;, temperature: 0.3 }
+  extraction: { runtime: ollama, model: &quot;qwen2.5:3b-instruct&quot;, temperature: 0.0 }
+  summarize:  { runtime: ollama, model: &quot;qwen2.5:3b-instruct&quot;, temperature: 0.3 }
+</code></pre>
+<ul>
+<li><code>chat</code> (диалог с тобой) — модель покрупнее и поумнее, <strong>7B</strong>.</li>
+<li><code>extraction</code>/<code>summarize</code> (фоновые задачи: извлечь факт, суммировать) — <strong>3B</strong>,
+  вдвое-втрое быстрее, и для структурных задач 7B избыточна.</li>
+</ul>
+<p>Почему это записано в YAML, а не в коде: смена модели должна быть <strong>правкой конфига,
+а не переписыванием программы</strong> (требование NFR-9). Захочешь завтра попробовать
+<code>llama3.1:8b</code> — поменяешь строчку.</p>
+<p><strong>Решение 2. <code>temperature: 0.3</code> для диалога — не случайность.</strong> Temperature — это
+«степень творческой отсебятины». Высокая (0.7–1.0) — модель разнообразнее, но у
+qwen2.5 7B на высокой температуре resulta: чаще вставляет слова на других языках и,
+главное, <strong>выдумывает списки файлов вместо честного вызова инструмента</strong>. Низкая
+(0.3) — предсказуемее и дисциплинированнее. Это выученный урок, записанный прямо в
+комментарии твоего конфига.</p>
+<p><strong>Решение 3. Одна модель в памяти за раз.</strong> Настройки Ollama
+<code>OLLAMA_NUM_PARALLEL=1</code> и <code>OLLAMA_MAX_LOADED_MODELS=1</code>: не пытаться держать 7B и 3B
+одновременно (не влезет комфортно в 16 ГБ вместе с эмбеддером, Qdrant и ОС).
+Переключение 7B↔3B стоит секунды (3B грузится быстро), и это приемлемо, потому что
+фоновые задачи и так идут в очереди, а не параллельно диалогу.</p>
+<h2>2.5. Что такое OpenAI-совместимый API и почему это важно</h2>
+<p><strong>API</strong> — это «розетка»: договорённость о форме запроса и ответа, чтобы разные
+программы стыковались. <strong>OpenAI-совместимый API</strong> — это конкретный, ставший
+де-факто стандартом формат: тот самый, который придумала OpenAI для ChatGPT, и
+который теперь понимают почти все рантаймы, включая Ollama.</p>
+<p>Ollama слушает на <code>http://localhost:11434/v1</code> и говорит на этом стандартном
+«языке розетки». Наш <strong>LLM Gateway</strong> общается с ней ровно так же, как общался бы с
+облачным OpenAI. Практическое следствие огромно:</p>
+<ul>
+<li>Хочешь заменить Ollama на LM Studio? Обе говорят на OpenAI-формате → меняешь
+  <code>base_url</code> в конфиге, код не трогаешь.</li>
+<li>Захочешь однажды подключить облачную модель на одну роль? Тот же формат → та же розетка.</li>
+</ul>
+<p>Это и есть причина, по которой в проекте <strong>рантайм — деталь конфигурации, а не
+фундамент</strong>. Мы «воткнуты в стандартную розетку», а не припаяны к конкретной Ollama.</p>
+<h2>2.6. Альтернативы, плюсы/минусы, твои решения</h2>
+<p><strong>Альтернатива всему подходу — облачная модель (GPT-4, Claude).</strong> Была бы умнее и
+быстрее в разы. Отвергнута по принципу Local First: приватность и независимость важнее.
+Но «форточка» оставлена: любую роль можно явно (и только явно) перевести на облако.</p>
+<p><strong>Плюсы локального инференса:</strong> приватность, офлайн, без оплаты за токены.
+<strong>Минусы (скрытые тоже):</strong>
+- Скорость на CPU — десятки секунд; это придётся принять и проектировать вокруг.
+- Качество 7B заметно ниже GPT-4; отсюда весь «пояс защит» вокруг модели.
+- Модель занимает RAM постоянно (<code>keep_alive</code>); если выгрузить ради экономии — первый
+  ответ после паузы будет медленнее (перезагрузка ~5 ГБ с диска).</p>
+<p><strong>Твои решения:</strong>
+- <strong>Держать ли 7B резидентно в памяти</strong> (<code>keep_alive: 60m</code>) или выгружать? Резидентно
+  — быстрее отклик, но 5 ГБ RAM всегда занято. Для ноутбука, где ты и работаешь, и
+  общаешься с ассистентом, — обычно стоит держать.
+- <strong>Экспериментировать ли с ipex-llm</strong> (сборка Ollama от Intel, умеет твою Iris Xe и
+  даёт ~1.5–2× ускорения)? В backlog: потенциально ощутимо, но усложняет установку.
+  Отложено намеренно, чтобы не спотыкаться на старте.
+- <strong>Пробовать ли модель покрупнее</strong> (14B) на роль chat? На 16 ГБ RAM без GPU — не
+  влезет комфортно и будет мучительно медленной. Реалистичный апгрейд качества —
+  это апгрейд железа (мини-ПК с 12–16 ГБ VRAM), а не подмена модели на текущем.</p>
+<h2>2.7. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«Почему первое сообщение после запуска такое медленное?» — модель грузится с диска
+  в RAM (~5 ГБ). Дальше, пока <code>keep_alive</code> не истёк, быстрее.</li>
+<li>«Ollama пишет <code>bind: Only one usage of each socket address</code> — это поломка?» — нет.
+  Это значит, что Ollama уже работает фоновым сервисом и слушает порт. Запускать
+  <code>ollama serve</code> вручную не нужно.</li>
+<li>«Можно ли ускорить генерацию?» — короче промпт (главный рычаг), модель поменьше на
+  фоновые роли (уже сделано), ipex-llm (эксперимент), в пределе — другое железо.</li>
+</ul>
+<hr>
+<h1 id="ch-3">Глава 3. Как агент принимает решения?</h1>
+<h2>3.1. Простое объяснение</h2>
+<p>Вернёмся к аналогии из главы 1: LLM — это речевой центр, который умеет только
+<em>говорить</em>. Как же тогда ассистент <em>действует</em> — находит файлы, ставит задачи?</p>
+<p>Секрет в том, что модель не действует сама. Она <strong>проговаривает намерение в
+специальной форме</strong>, а система его исполняет. Это как повар и су-шеф. Повар (модель)
+не бегает за продуктами — он говорит: «Мне нужны два яйца». Су-шеф (наша система)
+слышит, приносит яйца, кладёт на стол. Повар смотрит на то, что принесли, и говорит
+следующее: «Теперь разбей их в миску». И так до готового блюда.</p>
+<p>Ключевой сдвиг в понимании: <strong>модель не «выполняет команды» — она ведёт диалог с
+системой, где вместо слов иногда произносит „вызовы инструментов“, а система отвечает
+ей результатами.</strong> Каждый такой обмен — один круг. Кругов может быть несколько, пока
+блюдо (ответ) не готово. Этот повторяющийся цикл «модель сказала → система сделала →
+модель посмотрела → сказала снова» и называется <strong>agent loop</strong>, и он — сердце системы.</p>
+<h2>3.2. Как это устроено технически</h2>
+<p>Разберём по терминам, от простого к составному.</p>
+<p><strong>Tool Calling (вызов инструментов).</strong> Мы заранее описываем модели список функций,
+которые она может попросить выполнить, — с именем, описанием на человеческом языке и
+схемой аргументов. Например:</p>
+<pre><code>Инструмент: create_reminder
+Описание: Поставить напоминание пользователю на конкретное время
+Аргументы: { text: строка, when: строка (когда напомнить) }
+</code></pre>
+<p>Модель, получив запрос «напомни завтра купить билеты», вместо текстового ответа
+выдаёт <strong>структурированный вызов</strong>: <code>create_reminder(text="купить билеты",
+when="завтра")</code>. Технически это работает так: модель обучена, увидев подходящий
+запрос и список инструментов, генерировать не обычный текст, а особый блок в
+формате JSON. Наша система распознаёт этот блок, исполняет настоящую функцию и
+возвращает модели результат.</p>
+<p><strong>ReAct (Reason + Act, «рассуждай и действуй»).</strong> Это и есть шаблон цикла: модель
+чередует шаги рассуждения и шаги действия. Не «один вопрос — один ответ», а
+«подумал — сделал — посмотрел на результат — подумал снова». Именно ReAct позволяет
+решать составные задачи: «найди договор <em>и</em> скажи сроки» = поиск (действие) → чтение
+результата (рассуждение) → формулировка ответа.</p>
+<p><strong>Orchestrator (оркестратор).</strong> Это код, который <em>крутит</em> этот цикл: вызывает модель,
+ловит её вызовы инструментов, исполняет их, кладёт результат обратно, снова вызывает
+модель — и следит за лимитами (чтобы цикл не закрутился бесконечно). У нас это
+<code>core/agent/orchestrator.py</code>, ~300 строк. Оркестратор — это су-шеф из аналогии.</p>
+<p><strong>Planner (планировщик действий).</strong> В сложных системах бывает отдельный шаг, где
+модель сначала строит план из нескольких пунктов, а потом исполняет. У нас <em>явного</em>
+отдельного планировщика нет — для слабой 7B-модели это скорее вредно (она путается в
+длинных планах). Вместо этого мы полагаемся на пошаговый ReAct: модель планирует
+неявно, по одному шагу за раз. Это осознанное решение под слабую локальную модель
+(принцип «лучше 5 простых вызовов, чем 1 сложный»).</p>
+<p><strong>MCP (Model Context Protocol).</strong> Представь USB для инструментов. Раньше каждый
+инструмент надо было «припаивать» к агенту вручную. MCP — это стандартная «розетка»
+(придуманная Anthropic), в которую можно воткнуть готовый <em>сервер инструментов</em> —
+например, готовый коннектор к календарю или git — и агент сразу получит эти
+инструменты, не написав ни строки под них. Работает в обе стороны: мы можем и
+<em>подключать</em> чужие MCP-серверы (быть клиентом), и <em>опубликовать</em> свои инструменты как
+MCP-сервер (чтобы твой ассистент был доступен, скажем, из Claude Desktop). Для агента
+инструмент из MCP-сервера неотличим от встроенного — тот же реестр, те же уровни
+риска. В roadmap MCP — это Sprint 9; заложен же он с самого начала.</p>
+<p><strong>Почему агент умеет действовать, а не только болтать?</strong> Собери всё вместе: (1) мы
+описали модели инструменты, (2) модель умеет вместо текста выдать вызов инструмента,
+(3) оркестратор исполняет вызов и возвращает результат, (4) цикл повторяется. Именно
+эти четыре вещи, а не какая-то особая «агентность внутри модели», превращают
+говорящую LLM в действующего агента. Интеллект — в модели; способность действовать —
+в коде вокруг неё.</p>
+<h2>3.3. Три примера шаг за шагом</h2>
+<p><strong>Пример А. «Найди договор аренды.»</strong></p>
+<div class="diagram"><pre class="mermaid">sequenceDiagram
+    participant U as Ты
+    participant O as Orchestrator
+    participant L as LLM (qwen2.5)
+    participant RAG as RAG Service
+    U-&gt;&gt;O: «Найди договор аренды»
+    O-&gt;&gt;L: запрос + список инструментов
+    L--&gt;&gt;O: вызов: search_documents(query=&quot;договор аренды&quot;)
+    Note over O: risk=read → исполняем сразу, пишем в audit
+    O-&gt;&gt;RAG: search(&quot;договор аренды&quot;)
+    RAG--&gt;&gt;O: топ-фрагменты + пути к файлам
+    O-&gt;&gt;L: «вот что нашлось: [фрагменты]»
+    L--&gt;&gt;O: текст: «Нашёл: аренда_офис_2025.pdf, срок до 31.12»
+    O--&gt;&gt;U: ответ с указанием файла и страницы
+</pre></div>
+<p>Один инструмент, один круг. Обрати внимание: модель <strong>не искала сама</strong> — она попросила
+<code>search_documents</code>, а нашёл RAG. Модель лишь сформулировала запрос и потом красиво
+изложила результат.</p>
+<p><strong>Пример Б. «Напомни через неделю продать велосипед.»</strong></p>
+<p>Здесь спрятана тонкость — разделение <em>понимания</em> и <em>исполнения</em> (это ключевой принцип
+проекта, противоречие П-1 из требований):</p>
+<div class="diagram"><pre class="mermaid">sequenceDiagram
+    participant U as Ты
+    participant O as Orchestrator
+    participant L as LLM
+    participant REM as Reminder Engine
+    participant S as Scheduler
+    U-&gt;&gt;O: «Напомни через неделю продать велосипед»
+    O-&gt;&gt;L: запрос + инструменты
+    L--&gt;&gt;O: create_reminder(text=&quot;продать велосипед&quot;, when=&quot;через неделю&quot;)
+    O-&gt;&gt;REM: исполнить
+    REM-&gt;&gt;L: structured(role=extraction): «через неделю» + сегодня + tz → точная дата
+    L--&gt;&gt;REM: {due: 2026-07-25T10:00+03}
+    REM-&gt;&gt;S: schedule_once(2026-07-25T10:00, событие reminder_fire)
+    REM--&gt;&gt;O: ок, напоминание #42
+    O--&gt;&gt;U: «Напомню 25 июля в 10:00»
+</pre></div>
+<p>Разбор тонкости: <strong>LLM понимает «через неделю» → превращает в точную дату. Но само
+срабатывание в нужный момент — работа детерминированного кода (Scheduler), без всякой
+LLM.</strong> Почему так строго? Потому что напоминание в 10:00 обязано сработать в 10:00,
+даже если модель в этот момент выгружена, тормозит или галлюцинирует. Интерпретацию
+доверяем умной-но-ненадёжной модели; исполнение — тупому-но-надёжному коду. Это одно
+из важнейших архитектурных решений, и оно повторяется везде (файлы: LLM решает <em>что</em>,
+код <em>делает</em>).</p>
+<p><strong>Пример В. «Посмотри цену этой вещи.»</strong></p>
+<p>Это пример на <em>границы</em> и <em>включаемость</em>. Поиск цены в интернете требует инструмента
+<code>web_search</code>, а он у нас:
+- <strong>опциональный</strong> (внешний трафик — только с явного разрешения, принцип Local First);
+- <strong>выключен по умолчанию</strong> (в конфиге <code>feature flag</code>).</p>
+<p>Если <code>web_search</code> выключен — модель его просто не видит в списке инструментов и честно
+ответит «не умею искать в интернете» вместо того, чтобы выдумать цену. Если включён —
+круг будет как в примере А, только вместо RAG отработает веб-поиск. Урок: <strong>набор
+доступных инструментов управляется конфигом, и модель физически не может вызвать то,
+чего ей не дали.</strong> Это и безопасность, и защита от галлюцинаций.</p>
+<h2>3.4. Как это сделано в нашем проекте (и защиты от слабой модели)</h2>
+<p>Это тот раздел, где теория встречается с суровой реальностью 7B-модели на CPU. В
+проекте уже накоплен «пояс защит» — прямо из живой отладки (записано в roadmap
+Sprint 2):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Проблема слабой модели</th>
+<th>Защита в коде</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Выдумывает список файлов вместо вызова <code>list_files</code></td>
+<td>Принудительный <code>tool_choice</code> на тематических вопросах; низкая temperature</td>
+</tr>
+<tr>
+<td>Имитирует служебные форматы, «отчитывается» о невыполненных действиях</td>
+<td>Видимые маркеры реальных вызовов 🔧; чистка выдуманных служебных строк из контекста</td>
+</tr>
+<tr>
+<td>Зовёт один и тот же инструмент по кругу</td>
+<td>Дедупликация повторных вызовов</td>
+</tr>
+<tr>
+<td>Ломает формат вызова, пишет JSON текстом</td>
+<td>«Спасение» JSON-вызовов из текста; JSON-fallback режим (<code>tool_mode: json</code>)</td>
+</tr>
+<tr>
+<td>Модель без нативного tool calling</td>
+<td>Прозрачный переход в режим «JSON в ответе» + Pydantic-валидация + retry до 3 раз</td>
+</tr>
+<tr>
+<td>Длинный промпт → модель хуже слушается</td>
+<td>Бюджет промпта; фильтр «≤ 6–8 инструментов в промпте»</td>
+</tr>
+<tr>
+<td>Долго думает — кажется, что зависла</td>
+<td>Heartbeat «модель думает…» в Telegram; таймауты на все инструменты</td>
+</tr>
+</tbody>
+</table></div>
+<p>Запомни главный принцип проектирования новых фич (он записан в <code>CLAUDE.md</code>):
+<strong>проектируй с недоверием к модели.</strong> Всё внешнее — с таймаутом. Всё, что модель
+«говорит, что сделала», — проверяй. Служебные обмены не пускай в историю диалога.</p>
+<p><strong>Уровни риска инструмента</strong> — механизм, встроенный в оркестратор:</p>
+<div class="diagram"><pre class="mermaid">flowchart LR
+    TC[&quot;Модель вызвала инструмент&quot;] --&gt; RISK{risk?}
+    RISK --&gt;|read| GO[&quot;Исполнить сразу&quot;]
+    RISK --&gt;|write| GO2[&quot;Исполнить + записать undo-журнал&quot;]
+    RISK --&gt;|destructive| ASK[&quot;Спросить подтверждение у тебя&quot;]
+    ASK --&gt;|да| GO3[&quot;Исполнить&quot;]
+    ASK --&gt;|нет| STOP[&quot;Сообщить модели об отказе&quot;]
+</pre></div>
+<p><code>read</code> (поиск, чтение) — свободно. <code>write</code> (создать, переместить) — свободно, но с
+журналом отмены. <code>destructive</code> (удалить, перезаписать, массовое) — <strong>только после
+твоего «да» в чате</strong>. Каждый вызов пишется в audit log до и после. Это защита от того,
+что одна галлюцинация необратимо испортит твои файлы.</p>
+<h2>3.5. Альтернативы</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Подход к «мышлению агента»</th>
+<th>Что это</th>
+<th>Почему не у нас</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Жёсткий сценарий (if/else)</strong></td>
+<td>Программист заранее прописал все ветки</td>
+<td>Не гибко: каждый новый тип запроса — новый код. Мы хотим, чтобы модель сама выбирала</td>
+</tr>
+<tr>
+<td><strong>Явный Planner-Executor</strong></td>
+<td>Модель строит план из N шагов, потом исполняет</td>
+<td>Слабая 7B путается в длинных планах; для нас вреднее пошагового ReAct</td>
+</tr>
+<tr>
+<td><strong>Мульти-агенты</strong> (рой специализированных агентов)</td>
+<td>Несколько LLM-ролей спорят/делятся работой</td>
+<td>На CPU с одной моделью в памяти — роскошь не по карману; в backlog как «профили агентов»</td>
+</tr>
+<tr>
+<td><strong>Наш выбор: ReAct + Tool Registry</strong></td>
+<td>Один цикл, пошагово, инструменты из реестра</td>
+<td>Простой, отлаживаемый, дружелюбный к слабой модели</td>
+</tr>
+</tbody>
+</table></div>
+<h2>3.6. Плюсы и минусы</h2>
+<p><strong>Плюсы:</strong> прозрачность (каждый шаг в audit-логе, можно спросить «что ты делал?»);
+гибкость (новый инструмент = функция + декларация, ядро не трогаем); безопасность
+(уровни риска + подтверждения).</p>
+<p><strong>Минусы (скрытые тоже):</strong>
+- Каждый круг цикла — это ещё один вызов LLM, а значит ещё десятки секунд на CPU.
+  Задача в 3 инструмента может занять минуту-две. Это цена агентности на слабом железе.
+- Слабая модель иногда выбирает не тот инструмент или зацикливается — отсюда лимиты
+  итераций и «пояс защит». Идеальной надёжности выбора у 7B не будет; мы её страхуем.</p>
+<h2>3.7. Какие решения тебе предстоит принять</h2>
+<ul>
+<li><strong>Сколько инструментов давать модели одновременно?</strong> Чем больше выбор, тем чаще
+  7B ошибается. Мы держим ≤ 6–8 через фильтрацию по контексту — но какие именно в
+  каждом профиле, решать тебе по мере роста набора.</li>
+<li><strong>Где граница destructive?</strong> Сейчас удаление и массовые операции требуют подтверждения.
+  Хочешь строже (подтверждать и перемещения) или мягче — это твоя настройка.</li>
+<li><strong>Включать ли web-поиск и другие внешние инструменты?</strong> Каждый — это дырка во
+  «внешний мир»; по умолчанию всё закрыто.</li>
+</ul>
+<h2>3.8. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«Модель зациклилась / думает уже минуту — что происходит?» — сработает лимит
+  итераций/времени, и ассистент честно ответит о частичном результате. Heartbeat
+  покажет, что он жив, а не завис.</li>
+<li>«Почему он не сделал то, что я просил, а придумал, что сделал?» — классика 7B;
+  проверь audit-лог (<code>/audit</code>): там видно, был ли <em>реальный</em> вызов инструмента. Если
+  модель «отчиталась» без вызова — это галлюцинация, и защиты обычно её ловят.</li>
+<li>«Как добавить свой инструмент?» — функция + <code>ToolSpec</code> в <code>tools.py</code> модуля, и всё;
+  ни ядро, ни каналы не трогаются. Глава 10.</li>
+</ul>
+<hr>
+<h1 id="ch-4">Глава 4. Память</h1>
+<p>Это одна из важнейших глав. Если усвоить из неё одну мысль — пусть это будет:
+<strong>память ассистента — это не «длинный промпт», а поиск нужного в нужный момент.</strong></p>
+<h2>4.1. Простое объяснение</h2>
+<p>У человека память многослойна, и это удобная аналогия — наша система построена ровно
+по ней.</p>
+<ul>
+<li><strong>Рабочая память</strong> — то, что ты держишь в голове <em>прямо сейчас</em>, в этом разговоре.
+  «О чём мы говорили минуту назад». Ограниченная, быстро выветривается.</li>
+<li><strong>Эпизодическая память</strong> — воспоминания о <em>событиях</em>: «на прошлой неделе мы обсуждали
+  бюджет экспедиции».</li>
+<li><strong>Семантическая память</strong> — <em>факты</em>, оторванные от события: «мою жену зовут Аня»,
+  «проект Экспедиция — про Алтай». Ты не помнишь, <em>когда</em> узнал, что Париж — столица
+  Франции; ты просто это знаешь.</li>
+<li><strong>Процедурная память</strong> — <em>как себя вести</em>: привычки, стиль. «Я предпочитаю краткие
+  ответы» — это не факт о мире, а правило поведения.</li>
+</ul>
+<p>И ещё у людей есть <strong>сон</strong>, во время которого мозг перекладывает свежие впечатления из
+рабочей памяти в долговременную, обобщает, наводит порядок. У нашего ассистента тоже
+есть «сон» — ночная <strong>консолидация</strong>.</p>
+<p>Наша память устроена по этим же четырём слоям плюс ночная консолидация. Это не
+метафора для красоты — это буквальная архитектура (см. <code>docs/02-architecture.md §3</code>).</p>
+<h2>4.2. Контекст против памяти — почему это разные вещи</h2>
+<p>Новичок думает: «памятью ассистента» является то, что помещается в окно модели. Это
+опаснейшее заблуждение, и вот почему оно разваливается.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th><strong>Контекст</strong></th>
+<th><strong>Память</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Что это</td>
+<td>Рабочий стол на один вызов модели</td>
+<td>Хранилище на диске (SQLite + Qdrant)</td>
+</tr>
+<tr>
+<td>Живёт</td>
+<td>Один вызов LLM, потом стирается</td>
+<td>Годами, переживает перезапуск</td>
+</tr>
+<tr>
+<td>Размер</td>
+<td>Жёстко ограничен (у нас — ~1500 токенов бюджета)</td>
+<td>Практически неограничен</td>
+</tr>
+<tr>
+<td>Скорость</td>
+<td>Каждый токен замедляет ответ</td>
+<td>Не влияет на скорость ответа</td>
+</tr>
+<tr>
+<td>Аналогия</td>
+<td>То, что сейчас в голове</td>
+<td>Записная книжка на полке</td>
+</tr>
+</tbody>
+</table></div>
+<p>Ключевое следствие (противоречие П-6 из требований): <strong>нельзя положить „всю память“
+в контекст.</strong> Во-первых, не влезет. Во-вторых, даже если бы влезло — на CPU это были
+бы минуты ожидания и модель бы захлебнулась. Поэтому память — это <strong>retrieval-задача</strong>:
+в контекст на каждый запрос попадает только <em>релевантная выжимка</em>, найденная под
+текущий вопрос. Записная книжка лежит на полке; в руки берём только ту страницу,
+что нужна сейчас.</p>
+<p>Это переворачивает интуицию: «ассистент помнит всё» реализуется не через «модель
+держит всё в голове», а через «система умеет быстро найти нужное и подсунуть в
+контекст ровно перед вызовом модели».</p>
+<h2>4.3. Как это устроено технически: четыре слоя</h2>
+<div class="diagram"><pre class="mermaid">graph TB
+    subgraph L1[&quot;1 · Рабочая память&quot;]
+        WM[&quot;Буфер текущей сессии:&lt;br/&gt;последние N сообщений +&lt;br/&gt;скользящая суммаризация старых&quot;]
+    end
+    subgraph L2[&quot;2 · Эпизодическая&quot;]
+        EP[&quot;Суммаризации прошлых&lt;br/&gt;разговоров: дата, темы, участники&quot;]
+    end
+    subgraph L3[&quot;3 · Семантическая (факты)&quot;]
+        F[&quot;Типизированные факты:&lt;br/&gt;Person / Project / Decision / Fact&quot;]
+    end
+    subgraph L4[&quot;4 · Процедурная&quot;]
+        PREF[&quot;Предпочтения и правила&lt;br/&gt;поведения ассистента&quot;]
+    end
+    WM --&gt;|&quot;конец сессии / ночью:&lt;br/&gt;консолидация&quot;| EP
+    EP --&gt;|&quot;извлечение фактов (LLM)&quot;| L3
+    WM --&gt;|&quot;явное «запомни» — сразу&quot;| L3
+    L3 --&gt;|&quot;противоречие → вытеснение&quot;| L3
+    PREF --&gt;|&quot;ВСЕГДА в промпт&quot;| SP[&quot;Промпт для модели&quot;]
+    L3 --&gt;|&quot;поиск по текущему запросу&quot;| SP
+    EP --&gt;|&quot;при вопросах «о чём мы говорили»&quot;| SP
+</pre></div>
+<p>Разберём, что откуда берётся в промпт (это и есть работа <strong>Context Builder</strong>):</p>
+<ul>
+<li><strong>Процедурная (предпочтения)</strong> попадает в промпт <strong>всегда</strong> — она короткая и должна
+  влиять на <em>каждый</em> ответ. «Отвечай кратко» бессмысленно доставать «по запросу»; это
+  фон поведения.</li>
+<li><strong>Семантическая (факты)</strong> попадает <strong>по релевантности</strong> к текущему вопросу. Спросил
+  про Ивана — подтянулись факты про Ивана, а не все 500 фактов сразу.</li>
+<li><strong>Эпизодическая</strong> — при вопросах вида «о чём мы вчера говорили».</li>
+<li><strong>Рабочая</strong> — это сам текущий разговор, всегда под рукой, но старое ужимается в
+  «скользящую суммаризацию», чтобы не раздувать контекст.</li>
+</ul>
+<p><strong>Типизированный факт</strong> — не просто строка «Иван — подрядчик», а структура:</p>
+<pre><code>MemoryFact:
+  type: person | project | decision | fact
+  subject:   &quot;Иван Петров&quot;
+  content:   &quot;подрядчик по экспедиции, отвечает за снаряжение&quot;
+  confidence: 1.0 (явное «запомни») или 0.6–0.9 (извлечено моделью)
+  source:    id сообщения / документ / &quot;explicit&quot;
+  created_at, updated_at, superseded_by?
+</code></pre>
+<p>Зачем типы и <code>subject</code>: чтобы уметь отвечать на «что ты знаешь об Иване?» (фильтр по
+subject) и «какие решения по проекту X?» (тип=decision + project). Зачем <code>confidence</code>:
+явно сказанному верим полностью (1.0), самостоятельно извлечённому — с оговоркой,
+чтобы мусор не копился с тем же весом, что и твои прямые указания.</p>
+<h2>4.4. Как агент решает, что запомнить</h2>
+<p>Два пути, и это важное различие:</p>
+<ol>
+<li><strong>Явно</strong> — ты сказал «запомни, что…» или «моё предпочтение — …». Модель вызывает
+   инструмент <code>remember_fact</code>, факт сохраняется сразу с <code>confidence=1.0</code>. Это уже
+   работает (Sprint 3).</li>
+<li><strong>Автоматически</strong> — система <em>сама</em> замечает в разговоре факт, достойный запоминания
+   («вскользь упомянул, что жену зовут Аня»), и сохраняет его фоновой задачей. Это
+   тоньше и опаснее (легко нахватать мусора), поэтому <strong>отложено в Sprint 7</strong> и будет
+   с осторожными порогами <code>confidence</code> и ручной ревизией.</li>
+</ol>
+<p>Почему авто-извлечение отложено намеренно (риск из roadmap): слишком рьяное
+автозапоминание — прямой путь к замусориванию памяти галлюцинациями слабой модели.
+Сначала обкатываем явную память и механику извлечения, потом включаем автоматику.</p>
+<p><strong>Извлечение никогда не блокирует диалог.</strong> Оно висит на событии <code>message_processed</code> —
+том самом «в фоне» из схемы главы 1. Ты уже получил ответ; система <em>потом</em>, в свободную
+минуту, маленькой моделью (<code>extraction</code>, 3B) решает, не запомнить ли что-то. Диалог
+важнее фоновой работы — это железное правило на CPU-железе.</p>
+<h2>4.5. Можно ли забыть? Как не копить мусор?</h2>
+<p><strong>Забывание.</strong> Скажешь «забудь про Ивана» — факт помечается retracted (мягкое
+удаление): мгновенно исчезает из выдачи, но физически какое-то время хранится
+(политика хранения вычистит). Это уже работает (Sprint 3, «мягкое забудь»).</p>
+<p><strong>Противоречия — самое интересное.</strong> Новый факт о том же subject <strong>не затирает
+старый</strong>, а ставит ему <code>superseded_by</code>. Пример: «мы решили ехать в июле» → позже «нет,
+передумали, едем в августе». Старое решение не исчезает — оно помечается как
+вытесненное. В выдачу идёт актуальное («едем в августе»), но история сохранена, и на
+вопрос «а почему передумали?» ассистент сможет ответить. Это принципиально: <strong>память
+решений — это не текущее состояние, а летопись.</strong></p>
+<p><strong>Гигиена от мусора</strong> — несколько механизмов вместе:
+- порог <code>confidence</code> (низкоуверенные факты не лезут в выдачу наравне с твёрдыми);
+- дедупликация (один и тот же факт не плодится);
+- вытеснение вместо накопления копий;
+- ручная ревизия: «покажи, что ты запомнил за неделю» → удобно почистить (Sprint 7).</p>
+<h2>4.6. Как это хранится (реальная привязка к коду)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Слой</th>
+<th>Где хранится</th>
+<th>Статус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Рабочая</td>
+<td>SQLite: <code>conversations</code>, <code>messages</code></td>
+<td>Готово (Sprint 1/3)</td>
+</tr>
+<tr>
+<td>Эпизодическая</td>
+<td>SQLite <code>episodes</code> + вектор в Qdrant <code>memory</code></td>
+<td>Sprint 7</td>
+</tr>
+<tr>
+<td>Семантическая</td>
+<td>SQLite <code>memory_facts</code> + вектор в Qdrant <code>memory</code></td>
+<td>Факты — готово (Sprint 3); вектор — Sprint 4</td>
+</tr>
+<tr>
+<td>Процедурная</td>
+<td>SQLite <code>preferences</code></td>
+<td>Готово (Sprint 3)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Важная деталь про текущее состояние.</strong> Прямо сейчас (после Sprint 3) семантический
+поиск по фактам работает <strong>не через векторы</strong>, а через <strong>SQLite FTS5</strong> — полнотекстовый
+поиск с префиксным матчингом, специально настроенный под русскую морфологию (чтобы
+«Ивану», «Ивана», «Иваном» находили «Иван»). Это осознанный промежуточный шаг: память
+дала «wow-эффект» уже в Sprint 3, до тяжёлого RAG. В <strong>Sprint 4</strong> память «переедет» на
+векторный recall через Qdrant — тогда поиск станет по <em>смыслу</em>, а не только по словам
+(почему это важно — глава 6).</p>
+<p>Ещё деталь для точности: в текущем коде инструменты называются <code>remember_fact</code>,
+<code>recall_memory</code>, <code>forget_memory</code> (в ранних доках — <code>recall</code>/<code>forget</code>). Модуль памяти
+подключён к ядру через <code>MemoryPort</code> (инверсия зависимости: ядро <em>не знает</em> про модуль
+памяти, только про абстрактный порт) и включается feature-флагом
+<code>modules.memory.enabled</code>. Это иллюстрация принципа границ из главы 10.</p>
+<h2>4.7. Архитектура памяти — общий вид</h2>
+<div class="diagram"><pre class="mermaid">flowchart TB
+    subgraph Вход
+        MSG[&quot;Твоё сообщение&quot;]
+    end
+    subgraph Чтение[&quot;Чтение памяти (перед каждым ответом)&quot;]
+        CB[&quot;Context Builder&quot;]
+        CB --&gt; P[&quot;preferences() → всегда&quot;]
+        CB --&gt; R[&quot;recall(запрос) → релевантные факты&quot;]
+    end
+    subgraph Запись[&quot;Запись памяти (после ответа, в фоне)&quot;]
+        EV[&quot;message_processed&quot;]
+        EV --&gt; EX[&quot;extraction (3B):&lt;br/&gt;есть что запомнить?&quot;]
+        EX --&gt; ST[&quot;store: SQLite + (Qdrant)&quot;]
+    end
+    subgraph Ночь[&quot;Ночная консолидация (Sprint 7)&quot;]
+        CONS[&quot;сессии дня → эпизоды → факты&quot;]
+    end
+    MSG --&gt; CB
+    MSG -.после ответа.-&gt; EV
+    ST --&gt; R
+    CONS --&gt; ST
+</pre></div>
+<h2>4.8. Альтернативы</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Подход к памяти</th>
+<th>Что это</th>
+<th>Компромисс</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Всё в промпт</strong></td>
+<td>Пихать всю историю в контекст</td>
+<td>Не масштабируется, на CPU — смерть по скорости</td>
+</tr>
+<tr>
+<td><strong>Только «сырой» векторный поиск по всем сообщениям</strong></td>
+<td>Никаких типов, просто ищем похожие реплики</td>
+<td>Проще, но нет структуры: не ответишь «какие решения по X», копится мусор</td>
+</tr>
+<tr>
+<td><strong>Готовая «memory»-библиотека</strong> (mem0, Zep и т.п.)</td>
+<td>Внешний модуль памяти</td>
+<td>Чужие абстракции, свой формат хранения, зависимость; наша модель памяти специфична</td>
+</tr>
+<tr>
+<td><strong>Наш выбор: 4 слоя + типизированные факты</strong></td>
+<td>Своя модель под задачу</td>
+<td>Больше кода, но точный контроль, структура и летопись решений</td>
+</tr>
+</tbody>
+</table></div>
+<h2>4.9. Плюсы, минусы, твои решения</h2>
+<p><strong>Плюсы:</strong> структурированность (умеет отвечать на «что знаешь о ком-то»); летопись
+(история решений не теряется); не замусоривается; не зависит от размера контекста.</p>
+<p><strong>Минусы (скрытые):</strong> качество авто-извлечения ограничено 3B-моделью (будет пропускать
+и иногда придумывать — отсюда осторожные пороги и ревизия); консолидация — ночная
+LLM-работа, требует, чтобы машина была включена ночью (или наверстает при следующем
+включении).</p>
+<p><strong>Твои решения:</strong>
+- <strong>Насколько агрессивно авто-запоминать</strong> (Sprint 7): много помнить, но с мусором,
+  или мало, но чисто? Порог <code>confidence</code> — твоя ручка.
+- <strong>Что считать предпочтением</strong> (всегда в промпте — значит, ест бюджет каждого запроса):
+  держать список коротким.
+- <strong>Политика хранения</strong>: как долго держать retracted-факты и сессии перед вычисткой.</p>
+<h2>4.10. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«Ассистент „забыл“ то, что я говорил на прошлой неделе» — до Sprint 7 (консолидация)
+  между сессиями сохраняются <em>факты</em>, но не автоматически весь разговор. Скажешь
+  «запомни» — сохранится точно.</li>
+<li>«Он вспомнил устаревшее» — проверь, не остался ли старый факт без <code>superseded_by</code>;
+  скажи «забудь X» или поправь.</li>
+<li>«Память переехала на векторы (Sprint 4) — старые факты пропадут?» — нет, они в
+  SQLite (источник истины); Qdrant добавляет <em>способ поиска</em>, а не заменяет хранилище.</li>
+</ul>
+<hr>
+<h1 id="ch-5">Глава 5. Документы</h1>
+<h2>5.1. Простое объяснение</h2>
+<p>Представь, что у тебя есть очень внимательный библиотекарь. Ты вываливаешь на него
+все свои файлы — PDF, вордовские документы, заметки, таблицы. Он их читает и делает
+две вещи: (1) составляет подробную картотеку — что где лежит и о чём; (2) запоминает
+<em>смысл</em> каждого куска так, чтобы потом ты мог спросить не по точному названию, а по
+сути: «где там про сроки аренды?» — и он принесёт нужную страницу, даже если слова
+«сроки» в документе нет, а есть «действует до 31 декабря».</p>
+<p>Этот процесс превращения кучи файлов в умную картотеку называется <strong>индексирование</strong>.
+А то, что librarian сделал не читая заново все шкафы каждый раз, — это <strong>индекс</strong>:
+заранее подготовленная структура, по которой искать быстро.</p>
+<p>Важно с самого начала понять: <strong>ассистент не „держит открытыми“ твои файлы и не
+перечитывает их на каждый вопрос.</strong> Он один раз их прочитал, разложил по умной
+картотеке, и дальше работает с картотекой. Когда файл меняется — обновляет только его
+карточку. Это и делает поиск по тысячам документов быстрым.</p>
+<h2>5.2. Как это устроено технически: конвейер индексации</h2>
+<p>Превращение файла в «искомое» — это конвейер из пяти станций:</p>
+<div class="diagram"><pre class="mermaid">flowchart LR
+    SRC[&quot;Файл на диске&lt;br/&gt;договор.pdf&quot;] --&gt; EXT[&quot;1 · Извлечение текста&lt;br/&gt;достать чистый текст&lt;br/&gt;из PDF/DOCX/…&quot;]
+    EXT --&gt; CHUNK[&quot;2 · Чанкинг&lt;br/&gt;разрезать на куски&lt;br/&gt;по ~500–800 токенов&quot;]
+    CHUNK --&gt; EMB[&quot;3 · Эмбеддинг&lt;br/&gt;каждый кусок → вектор чисел&lt;br/&gt;(смысл в виде координат)&quot;]
+    EMB --&gt; STORE[&quot;4 · Хранение&lt;br/&gt;векторы → Qdrant&lt;br/&gt;текст+метаданные → каталог&quot;]
+    STORE --&gt; CAT[&quot;5 · Каталог файлов&lt;br/&gt;path, hash, mtime, чанки&lt;br/&gt;(SQLite, источник истины)&quot;]
+</pre></div>
+<p>Разберём каждую станцию — это фундамент, на котором стоит глава 6 и 7.</p>
+<p><strong>Станция 1. Извлечение текста (extraction).</strong> PDF, DOCX, XLSX — это не текст, это
+контейнеры со сложной структурой. Из них нужно <em>достать</em> чистый текст. Для каждого
+формата — свой инструмент:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Формат</th>
+<th>Чем достаём</th>
+<th>Нюанс</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PDF</td>
+<td>PyMuPDF</td>
+<td>Быстро для «текстовых» PDF; сканы (картинки) требуют OCR — это Sprint 8</td>
+</tr>
+<tr>
+<td>DOCX</td>
+<td>python-docx</td>
+<td>Абзацы, таблицы</td>
+</tr>
+<tr>
+<td>XLSX</td>
+<td>openpyxl</td>
+<td>Каждый лист как текст (Sprint 8)</td>
+</tr>
+<tr>
+<td>Markdown</td>
+<td>парсер + frontmatter</td>
+<td>Сохраняем структуру заголовков и метаданные</td>
+</tr>
+<tr>
+<td>txt / код</td>
+<td>как текст</td>
+<td>Код — плюс метки функций/классов</td>
+</tr>
+<tr>
+<td>Изображения, сканы</td>
+<td>OCR (Tesseract/RapidOCR)</td>
+<td>Распознавание текста на картинке; Sprint 8</td>
+</tr>
+</tbody>
+</table></div>
+<p>В Sprint 4 делаем PDF/DOCX/MD/txt; OCR и XLSX — Sprint 8. Кривые PDF (где текст плохо
+достаётся) получат OCR-fallback тоже в Sprint 8.</p>
+<p><strong>Станция 2. Чанкинг (chunking) — почему нельзя целиком.</strong> Документ на 40 страниц
+нельзя ни (а) засунуть в модель целиком — не влезет в контекст и убьёт скорость на CPU,
+ни (б) сделать одним вектором — «средний смысл» 40 страниц бесполезен для поиска.
+Поэтому режем на <strong>чанки</strong> — куски по ~500–800 токенов. Но не механически по длине, а
+<strong>структурно</strong>: по заголовкам в Markdown, по страницам в PDF, по листам в Excel. С
+небольшим <strong>перекрытием (overlap)</strong> между соседними кусками — чтобы фраза, разрезанная
+на границе, не потерялась. Каждый чанк — это будущая «карточка», которую найдёт поиск.</p>
+<p><strong>Станция 3. Эмбеддинг</strong> — превращение куска текста в вектор (список чисел),
+кодирующий смысл. Это тема главы 6, здесь только отметим: делает это <em>отдельная</em>
+маленькая модель (не qwen2.5!), у нас — <code>bge-m3</code> или <code>multilingual-e5-small</code>,
+работающая прямо в нашем процессе (in-process).</p>
+<p><strong>Станция 4–5. Хранение и каталог.</strong> Векторы едут в <strong>Qdrant</strong> (векторная БД, глава
+6). А в <strong>SQLite</strong> ведётся <strong>каталог файлов</strong> — таблица <code>files</code>: путь, хэш содержимого,
+время изменения (mtime), сколько чанков. Этот каталог — <strong>источник истины</strong> о том, что
+и в каком виде проиндексировано. Он же — ключ ко всей главе 7 (переиндексация).</p>
+<h2>5.3. Что хранится в индексе, а что — нет</h2>
+<p>Частый вопрос новичка, и ответ неочевиден:</p>
+<p><strong>В индексе (Qdrant) хранится:</strong>
+- <strong>Вектор</strong> каждого чанка (список чисел — смысл).
+- <strong>Копия текста</strong> самого чанка (чтобы показать тебе цитату).
+- <strong>Метаданные (payload)</strong>: путь к файлу, страница/заголовок, тип, дата, проект, теги.</p>
+<p><strong>В каталоге (SQLite) хранится:</strong>
+- Путь, хэш содержимого, mtime, статус индексации, число чанков.</p>
+<p><strong>Что НЕ хранится:</strong>
+- <strong>Сам оригинальный файл никуда не копируется целиком</strong> (кроме кэша извлечённого
+  текста для быстрого «прочитай документ полностью»). Оригинал остаётся у тебя на
+  диске там, где лежал. Индекс <em>ссылается</em> на него по пути.</p>
+<p>Это важно понять: <strong>индекс — это не копия твоих файлов, это умный указатель на них
+плюс закодированный смысл их кусков.</strong> Удалишь индекс — файлы целы, просто поиск
+перестанет работать, пока не переиндексируешь (глава 15).</p>
+<h2>5.4. Кто замечает изменения и что происходит автоматически</h2>
+<p>За твоими папками следит <strong>Indexer</strong> (<code>modules/indexer/</code>) — двумя способами сразу:</p>
+<ol>
+<li><strong>Watcher (наблюдатель) в реальном времени</strong> — библиотека <code>watchdog</code> слушает
+   события файловой системы от ОС: «файл создан», «изменён», «удалён», «перемещён».
+   Реагирует за секунды.</li>
+<li><strong>Периодический полный скан</strong> — на случай, если событие потерялось (watcher не
+   идеален, особенно на сетевых дисках): раз в какое-то время обходим все папки и
+   сверяем с каталогом по хэшу.</li>
+</ol>
+<p>Что происходит при каждом типе изменения — таблица, которую стоит запомнить (детали
+стоимости — глава 7):</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Ты сделал</th>
+<th>Кто заметил</th>
+<th>Что происходит автоматически</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Переименовал файл</strong></td>
+<td>Watcher (событие moved)</td>
+<td>Обновляется путь в каталоге; <strong>содержимое не переиндексируется</strong> (хэш тот же) — дёшево</td>
+</tr>
+<tr>
+<td><strong>Переместил файл</strong></td>
+<td>Watcher (moved)</td>
+<td>То же: меняется только путь, векторы остаются</td>
+</tr>
+<tr>
+<td><strong>Изменил содержимое</strong></td>
+<td>Watcher (modified)</td>
+<td>Хэш изменился → старые чанки файла удаляются, файл извлекается и индексируется заново</td>
+</tr>
+<tr>
+<td><strong>Удалил файл</strong></td>
+<td>Watcher (deleted)</td>
+<td>Чанки файла удаляются из Qdrant, запись из каталога убирается</td>
+</tr>
+<tr>
+<td><strong>Восстановил файл</strong></td>
+<td>Watcher (created)</td>
+<td>Как новый: извлечение → чанки → эмбеддинг → индекс</td>
+</tr>
+<tr>
+<td><strong>Создал новую папку</strong></td>
+<td>Watcher/скан</td>
+<td>Если папка в whitelisted корнях — её содержимое встаёт в очередь на индексацию</td>
+</tr>
+</tbody>
+</table></div>
+<p>Ключевая механика — <strong>хэш содержимого</strong>. Именно сравнение хэшей отвечает на вопрос
+«файл реально изменился или просто переехал?». Переименование/перемещение хэш не
+меняет → тяжёлую переиндексацию не запускаем, правим только путь. Это и есть
+<strong>инкрементальность</strong>: работаем только с тем, что реально поменялось.</p>
+<p><strong>Всё это идёт через очередь.</strong> Indexer не индексирует прямо в момент события — он
+кладёт задачу в <strong>очередь индексации</strong> (в SQLite, переживает перезапуск). Очередь
+разбирается с низким приоритетом, <strong>паузится во время активного диалога</strong> (диалог
+важнее!) и делает тяжёлое в тихие часы. Поэтому индексация никогда не мешает тебе
+разговаривать с ассистентом — важнейшее следствие на CPU-железе.</p>
+<h2>5.5. Какие документы ассистент сможет понимать</h2>
+<p>На разных спринтах:
+- <strong>Sprint 4:</strong> PDF (текстовые), DOCX, Markdown, txt, код.
+- <strong>Sprint 8:</strong> XLSX (Excel), OCR (сканы, изображения, кривые PDF), полноценный
+  Obsidian (wikilinks, теги, frontmatter как метаданные для поиска «найди связанные
+  заметки»).</p>
+<p>Obsidian — первоклассный источник: заметки не просто индексируются как текст, а с
+сохранением связей между ними и тегов, что даёт запросы вроде «найди заметки,
+связанные с этой».</p>
+<h2>5.6. Альтернативы</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Решение</th>
+<th>Альтернатива</th>
+<th>Почему у нас так</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Слежение</td>
+<td>Только периодический скан (без watcher)</td>
+<td>Watcher даёт реакцию за секунды; скан оставлен как страховка</td>
+</tr>
+<tr>
+<td>Извлечение PDF</td>
+<td>Готовый «комбайн» (unstructured.io)</td>
+<td>Тяжёлый, много зависимостей; PyMuPDF быстрый и точный для наших нужд</td>
+</tr>
+<tr>
+<td>Чанкинг</td>
+<td>Механический по N символов</td>
+<td>Структурный (по заголовкам/страницам) даёт осмысленные куски и точные цитаты</td>
+</tr>
+<tr>
+<td>Каталог</td>
+<td>Хранить только в Qdrant</td>
+<td>SQLite-каталог как источник истины проще для диффов по хэшу и дедупликации</td>
+</tr>
+</tbody>
+</table></div>
+<h2>5.7. Плюсы, минусы, твои решения</h2>
+<p><strong>Плюсы:</strong> инкрементальность (правим только изменённое); поиск по смыслу; цитаты с
+точным местом (файл + страница); не копирует твои файлы.</p>
+<p><strong>Минусы (скрытые):</strong> первичная индексация большого корпуса на CPU — долго (может не
+одна ночь, см. главу 7); watcher на сетевых/облачных дисках (OneDrive, сетевые шары)
+ненадёжен — там опираемся на периодический скан; качество зависит от качества
+извлечения (кривой скан без OCR = пустой чанк).</p>
+<p><strong>Твои решения (это открытый вопрос Q-3 из требований, нужен к Sprint 4):</strong>
+- <strong>Какие корневые папки индексировать?</strong> Точные пути. Не «весь диск C» — это и
+  медленно, и опасно (системные файлы).
+- <strong>Есть ли Obsidian vault и где он?</strong> Приоритет коннектора.
+- <strong>Примерный объём корпуса?</strong> От него зависит выбор эмбеддера и время первой индексации.
+- <strong>Язык корпуса</strong> (Q-5): русский, смешанный ру/en? От этого зависит выбор
+  мультиязычной модели эмбеддингов.</p>
+<h2>5.8. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«Я переименовал папку с документами — всё переиндексируется заново?» — нет, если
+  watcher поймал это как перемещение: обновятся пути, векторы останутся. Если не
+  поймал (например, было офлайн) — периодический скан заметит по хэшам, что содержимое
+  то же, и тоже обойдётся правкой путей. Подробно — глава 7.</li>
+<li>«Загрузил 20 PDF разом — почему поиск по ним не сразу?» — они встают в очередь и
+  индексируются в паузах/тихие часы; на CPU эмбеддинг 20 PDF — это минуты-десятки минут.
+  Появятся в поиске «в течение минут», как и записано в критериях Sprint 4.</li>
+<li>«Ассистент нашёл старую версию документа» — проверь, обновился ли индекс после
+  правки (хэш); при сомнении — ручная переиндексация (<code>scripts/reindex.py</code>).</li>
+</ul>
+<hr>
+<h1 id="ch-6">Глава 6. Векторная база</h1>
+<p>Эту главу объясняю особенно подробно — это концептуальное сердце RAG, и именно здесь у
+новичков «щёлкает» понимание, как машина может искать <em>по смыслу</em>.</p>
+<h2>6.1. Простое объяснение</h2>
+<p>Представь огромную карту, на которой расставлены <strong>все понятия мира</strong>. Похожие по
+смыслу вещи стоят рядом: «кошка» рядом с «котёнком» и «мурлыканьем», «король» рядом с
+«королевой» и «троном», а «экскаватор» — где-то далеко в другом районе. Такая карта
+есть — только не двумерная (как бумажная), а с сотнями измерений. Место каждого
+понятия на этой карте задаётся списком координат — и вот этот список координат и
+называется <strong>эмбеддинг (embedding)</strong>, «вектор смысла».</p>
+<p>Теперь фокус. Когда ты спрашиваешь «где про сроки аренды?», система ставит <em>твой
+вопрос</em> точкой на этой же карте и смотрит, какие кусочки документов оказались к нему
+<strong>ближе всего по расстоянию</strong>. Кусок, где написано «договор действует до 31 декабря»,
+окажется рядом — хотя слова «сроки» в нём нет! Потому что <em>по смыслу</em> «действует до
+даты» и «сроки» — соседи на карте.</p>
+<p>Вот почему <strong>нельзя искать только по словам</strong>: обычный текстовый поиск найдёт слово
+«сроки», только если оно буквально написано. А смысловой (семантический) поиск найдёт
+<em>идею</em> срока, как бы она ни была сформулирована — «до 31.12», «на год», «истекает в
+конце года». Это и есть суперсила векторного поиска.</p>
+<h2>6.2. Как это устроено технически</h2>
+<p><strong>Что такое embedding.</strong> Это результат работы специальной модели (эмбеддера), которая
+берёт кусок текста и выдаёт список чисел фиксированной длины — например, 1024 числа
+для <code>bge-m3</code>. Каждое число — координата в одном из 1024 «измерений смысла». Модель
+обучена так, что тексты с близким смыслом получают близкие наборы координат.</p>
+<p><strong>Почему текст превращается в числа.</strong> Потому что компьютер не умеет сравнивать
+«смыслы», но прекрасно умеет считать <strong>расстояние между точками</strong>. Превратив текст в
+координаты, мы свели неуловимое «насколько похожи по смыслу» к арифметике: чем меньше
+расстояние (обычно косинусное) между векторами — тем ближе смысл. Смысл стал
+геометрией.</p>
+<p>Классическая иллюстрация того, что векторы ловят <em>отношения</em>, а не просто слова:
+<code>вектор("король") − вектор("мужчина") + вектор("женщина") ≈ вектор("королева")</code>.
+Арифметика над смыслами работает, потому что смысл закодирован в координатах.</p>
+<p><strong>Что именно хранится в векторной базе.</strong> Для каждого чанка:
+- <strong>вектор</strong> (те самые 1024 числа) — по нему ищем;
+- <strong>payload</strong> — метаданные (путь, страница, тип, дата, проект) — по ним фильтруем;
+- <strong>копия текста чанка</strong> — чтобы вернуть тебе читаемую цитату.</p>
+<p><strong>Где хранится оригинальный текст.</strong> Сам чанк-текст лежит рядом с вектором в Qdrant
+(в payload). Полный оригинальный файл — на твоём диске (индекс на него ссылается);
+плюс кэш извлечённого текста в <code>data/files_cache/</code> для быстрого «прочитай целиком».</p>
+<p><strong>Что происходит при поиске</strong> (семантический поиск, шаг за шагом):</p>
+<div class="diagram"><pre class="mermaid">flowchart TB
+    Q[&quot;Твой запрос:&lt;br/&gt;«сроки аренды офиса»&quot;] --&gt; EMB[&quot;Эмбеддер превращает&lt;br/&gt;запрос в вектор&quot;]
+    EMB --&gt; SEARCH[&quot;Qdrant: найти векторы чанков,&lt;br/&gt;ближайшие к вектору запроса&lt;br/&gt;(алгоритм HNSW — быстрый&lt;br/&gt;приближённый поиск соседей)&quot;]
+    SEARCH --&gt; FILT[&quot;Применить payload-фильтры:&lt;br/&gt;только PDF, только проект X,&lt;br/&gt;только за 2025 год&quot;]
+    FILT --&gt; TOP[&quot;Топ-N ближайших чанков&lt;br/&gt;с их текстом и путями&quot;]
+    TOP --&gt; CTX[&quot;Кладём в контекст модели&lt;br/&gt;как цитируемые фрагменты&quot;]
+</pre></div>
+<p><strong>HNSW</strong> (Hierarchical Navigable Small World) — алгоритм, которым Qdrant ищет ближайшие
+векторы. Перебирать все миллион векторов по одному — медленно; HNSW строит хитрую
+«сеть дорог» между векторами и находит ближайших почти мгновенно, жертвуя капелькой
+точности (приближённый поиск). Тебе не нужно его реализовывать — это встроено в Qdrant.</p>
+<h2>6.3. Почему одного семантического поиска мало: гибридный поиск</h2>
+<p>Тонкость, которую упускают новички. Семантика гениальна для <em>смысла</em>, но <strong>проваливается
+на точных совпадениях</strong>: артикулах, кодах, именах, номерах. Запрос «договор №2024-АБ-17»
+семантически «размажется» — база вернёт похожие <em>по смыслу</em> договоры, а не именно этот
+номер. А запрос по редкому имени «Пшемыслав» семантика может не поймать, если такого
+имени почти не было в обучении эмбеддера.</p>
+<p>Поэтому используется <strong>гибридный поиск</strong> — два движка вместе:
+- <strong>Dense (плотный, семантический)</strong> — векторы, ловит смысл.
+- <strong>Sparse (разреженный, по ключевым словам, BM25)</strong> — ловит точные слова, номера, коды.</p>
+<p>Результаты обоих сливаются алгоритмом <strong>RRF (Reciprocal Rank Fusion)</strong> — грубо говоря,
+«кусок хорош, если он высоко и в смысловом, и в словесном рейтинге». Это критично для
+твоего <strong>смешанного ру/en корпуса</strong> и точных терминов. Qdrant умеет гибрид нативно —
+это одна из причин выбора (см. 6.5).</p>
+<h2>6.4. Сравнение векторных хранилищ</h2>
+<p>Теперь — обещанное подробное сравнение. Ты спрашивал про FAISS, Qdrant, Chroma,
+LanceDB, SQLite, Postgres+pgvector. Вот они по-честному:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Критерий</th>
+<th style="text-align: center;">Chroma</th>
+<th style="text-align: center;"><strong>Qdrant</strong></th>
+<th style="text-align: center;">FAISS</th>
+<th style="text-align: center;">LanceDB</th>
+<th style="text-align: center;">SQLite (sqlite-vec)</th>
+<th style="text-align: center;">Postgres+pgvector</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Без отдельного сервера</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ embedded</td>
+<td style="text-align: center;">✅ (библиотека)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌ нужен сервер</td>
+</tr>
+<tr>
+<td>Гибридный поиск (dense+sparse)</td>
+<td style="text-align: center;">🟡 частично</td>
+<td style="text-align: center;">✅ нативно</td>
+<td style="text-align: center;">❌ сам пиши</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">🟡 руками</td>
+<td style="text-align: center;">🟡 расширения</td>
+</tr>
+<tr>
+<td>Богатые фильтры (тип/дата/папка)</td>
+<td style="text-align: center;">🟡</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">🟡 вручную</td>
+<td style="text-align: center;">✅ SQL</td>
+</tr>
+<tr>
+<td>Масштаб ~1 млн чанков на десктопе</td>
+<td style="text-align: center;">🟡</td>
+<td style="text-align: center;">✅ HNSW+квантование</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">🟡 предел ~сотни тыс.</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Инкрементальные update/delete</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌ пересборка</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+</tr>
+<tr>
+<td>Снапшоты/бэкапы</td>
+<td style="text-align: center;">🟡</td>
+<td style="text-align: center;">✅ штатные</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ файл</td>
+<td style="text-align: center;">🟡 pg_dump</td>
+</tr>
+<tr>
+<td>Named vectors (сменить эмбеддер)</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">🟡</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">🟡</td>
+</tr>
+<tr>
+<td>Windows без Docker</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;">🟡 инсталлятор</td>
+</tr>
+<tr>
+<td>Путь роста (embedded→сервер)</td>
+<td style="text-align: center;">🟡</td>
+<td style="text-align: center;">✅ тот же API</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">🟡</td>
+<td style="text-align: center;">❌</td>
+<td style="text-align: center;">✅</td>
+</tr>
+</tbody>
+</table></div>
+<p>Коротко про каждого:
+- <strong>FAISS</strong> — легендарная библиотека поиска соседей от Meta. Быстрая, но это <em>только</em>
+  поиск: ни CRUD (обновить/удалить один документ — пересобирай весь индекс), ни
+  метаданных, ни фильтров. Пришлось бы строить целую БД вокруг неё. Отвергнут.
+- <strong>Chroma</strong> — дружелюбная, простая. Но слабее фильтры и нет пути роста на сервер.
+- <strong>LanceDB</strong> — сильный кандидат №2: быстрая, встраиваемая, есть гибрид. Моложе и
+  слабее по гибридному поиску и named vectors. Держим в уме как запасной.
+- <strong>SQLite + sqlite-vec</strong> — «нулевая» опция: всё в одном файле, ноль эксплуатации. Но
+  упирается в масштаб (~сотни тысяч чанков) и гибрид приходится собирать вручную.
+- <strong>Postgres + pgvector</strong> — мощно и зрело, но тянет за собой Postgres-<strong>сервер</strong>, что
+  для одного пользователя на ноутбуке — неоправданная тяжесть.
+- <strong>Qdrant</strong> — золотая середина под наши требования (см. ниже).</p>
+<h2>6.5. Как это сделано в нашем проекте: почему Qdrant</h2>
+<p><strong>Выбор — Qdrant, в embedded-режиме</strong> (<code>QdrantClient(path=...)</code> — просто файлы на
+диске в <code>data/qdrant/</code>, никакого отдельного сервера). Четыре решающих аргумента:</p>
+<ol>
+<li><strong>Один и тот же клиентский API в embedded и в server-режиме.</strong> Стартуешь с файлов
+   на ноутбуке (ноль эксплуатации). Вырастет корпус или захочешь вынести на домашний
+   сервер — меняешь <code>path=...</code> на <code>url=...</code> в конфиге, <strong>код не трогаешь</strong>. Миграция =
+   снапшот + смена URL. Это ровно требования NFR-1/NFR-9 (жизнь проекта 3–5 лет без
+   переписывания, смена инфраструктуры — конфиг).</li>
+<li><strong>Гибридный поиск нативно</strong> (dense + sparse + RRF) — критично для ру/en и точных
+   терминов (см. 6.3).</li>
+<li><strong>Богатые payload-фильтры</strong> — «найди в PDF из папки X за прошлый год по проекту Y»
+   выражается штатно, а не костылём.</li>
+<li><strong>Named vectors</strong> — можно держать рядом векторы от <em>разных</em> эмбеддеров. Захочешь
+   сменить модель эмбеддингов (e5-small → bge-m3) — доиндексируешь рядом и атомарно
+   переключишься, не сносив коллекцию. Это делает смену эмбеддера безопасной операцией.</li>
+</ol>
+<p><strong>Какой эмбеддер</strong> (это отдельное решение от выбора БД!). На CPU есть развилка:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Эмбеддер</th>
+<th>Размер</th>
+<th>Скорость на CPU</th>
+<th>Качество</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>bge-m3</code></td>
+<td>570M</td>
+<td>Медленный (большой корпус → многочасовая индексация)</td>
+<td>Отличное, мультиязычный</td>
+</tr>
+<tr>
+<td><code>multilingual-e5-small</code></td>
+<td>118M</td>
+<td>Быстрый</td>
+<td>Хорошее, мультиязычный</td>
+</tr>
+</tbody>
+</table></div>
+<p>Рекомендация под твоё железо: начать с <strong>e5-small</strong> (индексация корпуса реалистична по
+времени), а <code>bge-m3</code> держать как «опцию качества», если retrieval не устроит. Это как
+раз тот случай, ради которого сделаны named vectors — сменить эмбеддер без пересоздания
+всего. (В roadmap Sprint 4 упомянут bge-m3 «по умолчанию», но CPU-адаптация из
+требований §4.2 прямо рекомендует e5-small на старте — это твоя развилка, см. 6.7.)</p>
+<p>Эмбеддер работает <strong>in-process</strong> (прямо в нашем Python-процессе, через
+<code>sentence-transformers</code>), а не через Ollama. Почему: чтобы эмбеддинги не зависели от
+перезапусков Ollama и не конкурировали с чат-моделью за место в её памяти.</p>
+<h2>6.6. Плюсы и минусы</h2>
+<p><strong>Плюсы Qdrant для нас:</strong> ноль эксплуатации на старте (файлы), но есть куда расти;
+нативный гибрид; богатые фильтры; штатные снапшоты для бэкапа; named vectors для
+безболезненной смены эмбеддера.</p>
+<p><strong>Минусы (скрытые):</strong>
+- Embedded-Qdrant держит индекс в памяти для скорости — на большом корпусе (сотни
+  тысяч чанков) это ощутимая доля твоих 16 ГБ. Следить при росте; квантование векторов
+  и переезд на server-режим — рычаги.
+- Гибридный поиск требует <em>двух</em> представлений каждого чанка (dense + sparse) — чуть
+  больше места и времени индексации.
+- Qdrant — отдельная зависимость со своим форматом; «просто открыть файл руками» не
+  выйдет (в отличие от SQLite). Отсюда важность штатных снапшотов для бэкапа.</p>
+<h2>6.7. Какие решения тебе предстоит принять</h2>
+<ul>
+<li><strong>Эмбеддер: e5-small или bge-m3?</strong> Скорость индексации против качества поиска. Совет:
+  старт на e5-small, апгрейд на bge-m3 точечно, если качество не устроит (named vectors
+  это позволяют без боли).</li>
+<li><strong>Embedded или server-режим Qdrant?</strong> (открытый вопрос Q-6). Старт — embedded (по
+  умолчанию, ноль эксплуатации). Server (в т.ч. в Docker) — когда корпус вырастет.</li>
+<li><strong>Включать ли reranker</strong> (<code>bge-reranker-v2-m3</code>)? Он переупорядочивает топ результатов
+  для точности, но добавляет секунды на каждый поиск на CPU. По умолчанию <strong>выключен</strong>;
+  включать, если качество retrieval не устроит.</li>
+<li><strong>Размер чанка и overlap</strong> — влияет и на качество, и на объём. Дефолт (~500–800
+  токенов) разумен; тонкая настройка — по мере обкатки на твоём корпусе.</li>
+</ul>
+<h2>6.8. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«Поиск находит нерелевантное» — возможные причины: не тот эмбеддер для языка, слишком
+  крупные чанки, нужен гибрид/reranker. Развилки выше.</li>
+<li>«Точный номер договора не находится» — это ограничение чистой семантики; на то и
+  гибридный поиск (sparse-компонент). Убедись, что он включён.</li>
+<li>«Сменил эмбеддер — старый индекс сломался?» — нельзя искать вектором от новой модели
+  по векторам старой (они в «разных системах координат»). Именно поэтому — named vectors
+  и переиндексация рядом с атомарным переключением, а не «на месте».</li>
+<li>«Сколько места займёт индекс?» — грубо: миллион чанков × 1024 float ≈ 4 ГБ только на
+  dense-векторы, плюс sparse, плюс текст и payload. Планируй по объёму корпуса (глава 14).</li>
+</ul>
+<hr>
+<h1 id="ch-7">Глава 7. Переиндексация</h1>
+<p>Эта глава — про то, что происходит, когда твой корпус <em>меняется</em>. Она целиком выросла
+из механики главы 5 (хэши, каталог, очередь), так что если та ясна — эта пойдёт легко.</p>
+<h2>7.1. Простое объяснение</h2>
+<p>Вернёмся к библиотекарю. У него есть картотека. Когда в библиотеку приносят одну
+новую книгу — он заводит на неё одну карточку, а не переписывает всю картотеку заново.
+Когда книгу переставили на другую полку — он меняет в карточке номер полки, но не
+перечитывает книгу. Когда книгу выбросили — выбрасывает карточку.</p>
+<p>Вот это и есть <strong>инкрементальная переиндексация</strong>: трогаем только то, что реально
+изменилось, и ровно настолько, насколько изменилось. Полная переиндексация («перечитать
+все книги заново») — крайняя мера, нужная редко.</p>
+<p>Ключевой вопрос, на который отвечает вся глава: <strong>как система понимает, что именно
+изменилось и насколько дорого это обработать?</strong> Ответ — через хэш содержимого и каталог
+файлов из главы 5.</p>
+<h2>7.2. Как система понимает, что изменилось</h2>
+<p>Единственный надёжный признак «файл реально стал другим» — <strong>хэш его содержимого</strong>
+(короткий отпечаток: одинаковое содержимое → одинаковый хэш, изменил хоть байт → хэш
+другой). Каталог <code>files</code> в SQLite хранит хэш каждого файла. Механизм сверки:</p>
+<div class="diagram"><pre class="mermaid">flowchart TB
+    EV[&quot;Событие от watcher&lt;br/&gt;или периодический скан&quot;] --&gt; H[&quot;Посчитать хэш файла&quot;]
+    H --&gt; CMP{Хэш совпадает&lt;br/&gt;с каталогом?}
+    CMP --&gt;|&quot;да, и путь тот же&quot;| SKIP[&quot;Ничего не делать&lt;br/&gt;(файл не менялся)&quot;]
+    CMP --&gt;|&quot;да, но путь новый&quot;| PATH[&quot;Обновить только путь&lt;br/&gt;(файл переехал/переименован).&lt;br/&gt;Векторы НЕ трогаем — дёшево&quot;]
+    CMP --&gt;|&quot;нет (содержимое иное)&quot;| REIDX[&quot;Переиндексировать:&lt;br/&gt;удалить старые чанки файла →&lt;br/&gt;извлечь → чанки → эмбеддинг →&lt;br/&gt;upsert. Дорого&quot;]
+    CMP --&gt;|&quot;файла нет, а в каталоге был&quot;| DEL[&quot;Удалить чанки из Qdrant&lt;br/&gt;+ убрать из каталога&quot;]
+</pre></div>
+<p>Запомни это раздвоение: <strong>«переехал» (хэш тот же) — дёшево, правим строчку в каталоге;
+«изменился» (хэш другой) — дорого, гоним через весь конвейер главы 5.</strong> Вся экономия
+переиндексации держится на этом различии.</p>
+<h2>7.3. Разбор твоих сценариев по стоимости</h2>
+<p>Ты спрашивал про конкретные ситуации — вот они, с ценой каждой:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Сценарий</th>
+<th>Кто обнаружил</th>
+<th>Что переиндексируется</th>
+<th>Стоимость</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Изменил 1 файл</strong></td>
+<td>Watcher (modified)</td>
+<td>Только этот файл: его чанки удаляются, файл индексируется заново</td>
+<td>Секунды–минута (зависит от размера)</td>
+</tr>
+<tr>
+<td><strong>Изменил 1000 файлов</strong></td>
+<td>Watcher/скан</td>
+<td>Каждый из 1000 — заново, но по очереди, в паузах диалога</td>
+<td>Часы; идёт фоново, не мешает</td>
+</tr>
+<tr>
+<td><strong>Переместил каталог</strong></td>
+<td>Watcher (moved)</td>
+<td><strong>Ничего</strong> из содержимого! Обновляются только пути в каталоге</td>
+<td>Секунды (правка путей)</td>
+</tr>
+<tr>
+<td><strong>Переименовал папку</strong></td>
+<td>Watcher (moved)</td>
+<td>То же: только пути</td>
+<td>Секунды</td>
+</tr>
+<tr>
+<td><strong>Удалил документы</strong></td>
+<td>Watcher (deleted)</td>
+<td>Ничего не индексируется; чанки удалённых убираются из Qdrant</td>
+<td>Мгновенно (удаление)</td>
+</tr>
+<tr>
+<td><strong>Подключил новый диск</strong></td>
+<td>Периодический скан</td>
+<td>Всё содержимое (если диск в whitelisted корнях) — как первичная индексация</td>
+<td>Долго (см. 7.5)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Разбор двух неочевидных:</p>
+<p><strong>«Переместил каталог с 5000 файлов».</strong> Наивная система переиндексировала бы все 5000
+(часы работы CPU!). Наша — увидит по хэшам, что содержимое не изменилось, ни один
+байт, и обновит только <em>пути</em> в каталоге. Секунды вместо часов. Вот ради чего каталог
+хранит хэши.</p>
+<p><strong>Оговорка про надёжность обнаружения перемещения.</strong> Watchdog не всегда присылает
+чистое событие «moved» — иногда это выглядит как «delete старого + create нового»
+(особенно на разных дисках или при офлайн-перемещении). Чтобы это не вызвало напрасную
+переиндексацию, при <code>create</code> система сначала считает хэш и проверяет: «а нет ли уже
+файла с таким хэшем в каталоге?» Если есть — это перемещение, а не новый файл, правим
+путь. Так «переехал» остаётся дешёвым, даже когда ОС не сказала прямо «moved».</p>
+<h2>7.4. Что можно НЕ индексировать</h2>
+<p>Экономия начинается с того, чтобы не делать лишнего:
+- <strong>Файлы вне whitelisted корней</strong> — не наша забота вообще.
+- <strong>Неподдерживаемые/бинарные типы</strong> (архивы, видео, exe) — пропускаем.
+- <strong>Слишком большие файлы</strong> — по порогу из конфига (гигантский лог не нужен в RAG).
+- <strong>Не изменившиеся файлы</strong> — по хэшу (главный механизм).
+- <strong>Служебные папки</strong> (<code>.git</code>, <code>node_modules</code>, <code>.obsidian/</code>) — исключаются паттернами.</p>
+<h2>7.5. Сколько это стоит: время, память, процессор</h2>
+<p>Честные порядки величин на твоём CPU (i7-1165G7):</p>
+<p><strong>Время.</strong> Основная стоимость — <strong>эмбеддинг</strong> (прогон текста через модель-эмбеддер).
+На CPU с e5-small — порядка сотен–тысяч чанков в минуту (зависит от длины). Прикидка
+первичной индексации:
+- 100 документов (~2000 чанков) — минуты–десятки минут.
+- 10 000 документов (~200 000 чанков) — <strong>часы, возможно не одна ночь</strong>. Это нормально
+  и заложено в план: первичная индексация большого корпуса — ночной инкрементальный
+  процесс, спешить некуда.</p>
+<p><strong>Процессор.</strong> Эмбеддинг грузит CPU почти полностью. Именно поэтому очередь
+<strong>паузится во время диалога</strong> (иначе твой вопрос будет ждать, пока CPU занят
+индексацией) и тяжёлое уходит в <strong>тихие часы</strong> (конфиг, напр. 02:00–06:00). Воркеров
+индексации — 1–2, не больше: незачем отбирать все ядра у системы.</p>
+<p><strong>Память.</strong> Эмбеддер (e5-small, 118M) в памяти — сотни МБ. Растущий индекс Qdrant —
+пропорционально числу чанков (см. главу 14). Извлечение больших PDF временно требует
+памяти под текст. Всё это на фоне 16 ГБ и одной LLM — почему и держим одну модель в
+памяти за раз (глава 2).</p>
+<p><strong>Диск.</strong> Кэш извлечённого текста + индекс Qdrant + sparse-представления. Планируй
+единицы–десятки ГБ на большой корпус (глава 14).</p>
+<h2>7.6. Инкрементальная индексация и стратегии</h2>
+<p><strong>Да, инкрементальная индексация — основной режим</strong> (не полная). Стратегии, которые
+комбинируются:</p>
+<ol>
+<li><strong>Событийная (watcher)</strong> — реакция за секунды на изменения, пока система работает.</li>
+<li><strong>Периодический полный скан</strong> — сверка по хэшам, ловит пропущенные события
+   (сетевые диски, офлайн-изменения). Реже, в тихие часы.</li>
+<li><strong>Ручная полная переиндексация</strong> — <code>scripts/reindex.py</code>, крайняя мера: сменил
+   эмбеддер, повредился индекс, radikально поменял настройки чанкинга.</li>
+<li><strong>Приоритеты в очереди</strong> — только что присланный тобой файл индексируется раньше,
+   чем фоновая массовая дозагрузка.</li>
+<li><strong>Дедупликация в очереди</strong> — если файл изменился трижды, пока ждал очереди, он
+   проиндексируется один раз (по последнему состоянию), а не трижды.</li>
+</ol>
+<h2>7.7. Альтернативы, плюсы/минусы</h2>
+<p><strong>Альтернатива:</strong> переиндексировать всё по расписанию (раз в ночь — весь корпус).
+Проще в коде, но на CPU с большим корпусом — неподъёмно (каждую ночь часы работы ради
+пары изменившихся файлов). Инкрементальность обязательна на нашем железе.</p>
+<p><strong>Плюсы нашего подхода:</strong> дёшево (трогаем только изменённое); не мешает диалогу
+(очередь + паузы); переживает перезапуск (очередь в SQLite); «переезд» файлов почти
+бесплатен.</p>
+<p><strong>Минусы (скрытые):</strong> watcher ненадёжен на сетевых/облачных дисках — там задержка до
+следующего скана; первичная индексация большого корпуса всё равно долгая (это цена
+CPU, не архитектуры); если хэш-каталог повредится, придётся сверять заново.</p>
+<h2>7.8. Твои решения и поздние вопросы</h2>
+<p><strong>Решения:</strong> частота периодического скана; границы тихих часов; порог размера файла;
+число воркеров (1 или 2); паттерны исключений.</p>
+<p><strong>Поздние вопросы:</strong>
+- «Индексатор стоит уже 2 часа» — в Sprint 10 появится health-мониторинг с
+  самоотчётом в Telegram именно про такое. Пока — смотри логи и очередь через <code>/jobs</code>
+  (в планах CLI).
+- «Переиндексировал вручную — дубли в поиске?» — не должно: перед upsert старые чанки
+  файла удаляются по его id. Если что-то пошло не так — полный <code>reindex.py</code> пересобирает
+  коллекцию с нуля.
+- «Как понять, что файл уже проиндексирован?» — статус в каталоге <code>files</code>; в планах —
+  команда показа состояния индексации.</p>
+<hr>
+<h1 id="ch-8">Глава 8. Telegram</h1>
+<p>Ты писал, что почти ничего не знаешь про Telegram Bot API. Эта глава закрывает пробел с
+нуля — и объясняет, почему именно Telegram оказался идеальным каналом для <em>локального</em>
+ассистента (это неочевидно и красиво).</p>
+<h2>8.1. Простое объяснение</h2>
+<p><strong>Бот в Telegram — это просто „пользователь“, которым управляет не человек, а
+программа.</strong> У него есть имя (@твой_бот), он есть в твоём списке чатов, ты пишешь ему
+как другу — а отвечает ему наша программа.</p>
+<p>Где он «живёт»? Вот тут ловушка для интуиции. Кажется, что бот живёт «в Telegram», на
+серверах Telegram. На самом деле в Telegram живёт только его <em>почтовый ящик</em>. А <em>мозг</em>
+бота — наша программа — живёт <strong>на твоём ноутбуке</strong>. Telegram лишь передаёт сообщения
+между тобой и этим мозгом, как почта передаёт письма между двумя людьми.</p>
+<p>И вот почему это гениально для локального ассистента: <strong>твой ноутбук не обязан быть
+доступен из интернета.</strong> Он сам, когда хочет, «заходит на почту» к Telegram, забирает
+накопившиеся сообщения и оставляет ответы. Никто снаружи не может достучаться до твоего
+ноутбука — он всегда инициатор связи. Твой домашний компьютер за роутером, без белого
+IP, без проброса портов — и при этом ты пишешь ассистенту из любой точки мира через
+обычный Telegram. Магия в том, что связь всегда идёт <em>изнутри наружу</em>.</p>
+<h2>8.2. Как это устроено технически: polling против webhook</h2>
+<p>Есть два способа боту получать сообщения. Разница между ними — ядро этой главы.</p>
+<p><strong>Webhook (обратный вызов).</strong> Ты говоришь Telegram: «когда придёт сообщение, постучись
+на такой-то мой адрес в интернете». Telegram сам <em>приходит</em> к твоему серверу. Требует:
+у тебя есть публичный адрес в интернете, открытый порт, HTTPS-сертификат. Для сервера —
+удобно и эффективно. <strong>Для домашнего ноутбука — кошмар:</strong> белый IP, проброс портов,
+сертификаты, дырка в firewall для входящих соединений.</p>
+<p><strong>Long polling (длинный опрос).</strong> Твоя программа сама периодически спрашивает Telegram:
+«есть новые сообщения?» и держит соединение открытым, пока не появятся. Никаких входящих
+соединений, никакого публичного адреса — только исходящие запросы от тебя к Telegram.</p>
+<div class="diagram"><pre class="mermaid">flowchart LR
+    subgraph web[&quot;Webhook (НЕ у нас)&quot;]
+        TG1[&quot;Telegram&quot;] --&gt;|&quot;входящее соединение&lt;br/&gt;к тебе — нужен белый IP&quot;| ME1[&quot;Твой сервер&quot;]
+    end
+    subgraph poll[&quot;Long polling (НАШ выбор)&quot;]
+        ME2[&quot;Твой ноутбук&quot;] --&gt;|&quot;исходящий запрос:&lt;br/&gt;&#x27;есть новое?&#x27;&quot;| TG2[&quot;Telegram&quot;]
+        TG2 -.-&gt;|&quot;ответ с сообщениями&lt;br/&gt;по тому же соединению&quot;| ME2
+    end
+</pre></div>
+<p><strong>Наш выбор — long polling</strong>, и это прямое следствие принципа Local First: <strong>у системы
+нет ни одного входящего соединения.</strong> Telegram работает через исходящий опрос, web-чат
+слушает только <code>127.0.0.1</code> (сам себя). Твой ноутбук снаружи невидим и недостижим — и
+это не ограничение, а фича безопасности.</p>
+<h2>8.3. Нужен ли сервер?</h2>
+<p>Нет. Нужен только <strong>твой включённый ноутбук с запущенной программой и интернетом</strong>.
+Пока программа работает — она опрашивает Telegram и отвечает. Выключил ноутбук —
+сообщения копятся у Telegram в «почтовом ящике» (несколько дней), включил — программа
+их заберёт. Отдельный сервер, облако, хостинг — не нужны. Именно это делает ассистента
+по-настоящему <em>твоим</em> и бесплатным в эксплуатации (глава 14).</p>
+<h2>8.4. Как это сделано в нашем проекте</h2>
+<p><strong>Библиотека — aiogram 3</strong> (<code>channels/telegram/gateway.py</code>), современный асинхронный
+фреймворк для Telegram-ботов на Python. Что делает наш Telegram Gateway:</p>
+<div class="diagram"><pre class="mermaid">flowchart TB
+    IN[&quot;Сообщение боту&quot;] --&gt; WL{&quot;user_id в whitelist?&quot;}
+    WL --&gt;|нет| SILENCE[&quot;Молчание + запись в лог&lt;br/&gt;(чужой не получит ответа)&quot;]
+    WL --&gt;|да| TYPE{Тип сообщения}
+    TYPE --&gt;|текст| ROUTER[&quot;→ Router → агент&quot;]
+    TYPE --&gt;|голос| STT[&quot;Скачать → faster-whisper →&lt;br/&gt;текст → Router (пометка voice)&quot;]
+    TYPE --&gt;|документ/фото| SAVE[&quot;Сохранить в data/inbox/ →&lt;br/&gt;событие file_received (индексатор) +&lt;br/&gt;сообщение агенту «прислан файл X»&quot;]
+    ROUTER --&gt; OUT[&quot;Ответ агента&quot;]
+    STT --&gt; OUT
+    OUT --&gt; FMT[&quot;Разбить длинное на части,&lt;br/&gt;экранировать markdown,&lt;br/&gt;streaming через редактирование&quot;]
+    FMT --&gt; USER[&quot;Ты видишь ответ&quot;]
+</pre></div>
+<p>Разберём ключевые механики:</p>
+<p><strong>Whitelist (белый список).</strong> Первое, что проверяется, — твой ли это <code>user_id</code>
+(в конфиге; у тебя это <code>909506738</code>). Чужому — <strong>тишина и запись в лог</strong>, не «доступ
+запрещён» (чтобы не подтверждать существование бота). Это выполнение требования
+FR-9.2 / безопасность: только ты можешь пользоваться ассистентом.</p>
+<p><strong>Голосовые сообщения.</strong> Ты наговорил — Gateway скачивает <code>.ogg</code>, прогоняет через
+<strong>faster-whisper</strong> (модель распознавания речи, роль <code>stt</code>, работает in-process на CPU
+в реальном времени), получает текст и отдаёт агенту с пометкой «это было голосовое».
+Дальше — как обычный текст. Ты можешь диктовать ассистенту на ходу.</p>
+<p><strong>Документы.</strong> Прислал PDF — Gateway кладёт его в <code>data/inbox/</code>, публикует событие
+<code>file_received</code> (его подхватит индексатор — файл станет искомым), и отдельно сообщает
+агенту «пользователь прислал файл X» (чтобы тот мог отреагировать: резюмировать,
+спросить куда положить). Так связаны Telegram и RAG (глава 5, поток 4).</p>
+<p><strong>Streaming (потоковый ответ).</strong> LLM на CPU пишет ответ медленно (3–6 ток/с). Ждать
+30 секунд молча — плохо. Поэтому Gateway показывает ответ <em>по мере генерации</em>,
+периодически <strong>редактируя</strong> одно и то же сообщение (Telegram это умеет). Ты видишь,
+как ответ «печатается», а не пустоту. Плюс <strong>heartbeat</strong> «модель думает…», пока идёт
+долгий prefill.</p>
+<p><strong>Разбиение и экранирование.</strong> У Telegram лимит на длину сообщения (~4096 символов) и
+свои правила markdown. Gateway режет длинные ответы на части (<code>split.py</code>) и экранирует
+спецсимволы, чтобы форматирование не ломалось.</p>
+<h2>8.5. Как работают напоминания через Telegram</h2>
+<p>Тонкость архитектуры: <strong>Reminder Engine доставляет напоминание не напрямую в Telegram,
+а через Router.</strong> Почему это важно — Router разошлёт напоминание <em>во все активные
+каналы</em> (сегодня Telegram, завтра добавишь web-чат — напоминания появятся и там без
+единой правки в движке напоминаний). Само срабатывание — это детерминированный
+Scheduler (глава 9), а Telegram — лишь способ доставки. К напоминанию Gateway рисует
+inline-кнопки [✅ Сделал] [⏰ Позже] [✖ Отмена] — нажатие возвращается тем же путём
+(Telegram → Router → Reminder Engine).</p>
+<h2>8.6. Полная схема канала</h2>
+<div class="diagram"><pre class="mermaid">sequenceDiagram
+    actor U as Ты (Telegram-клиент)
+    participant TGS as Серверы Telegram
+    participant GW as Telegram Gateway (твой ноут)
+    participant R as Router
+    participant A as Агент
+    U-&gt;&gt;TGS: сообщение боту
+    Note over GW,TGS: Gateway постоянно опрашивает (long polling)
+    GW-&gt;&gt;TGS: «есть новое?»
+    TGS--&gt;&gt;GW: твоё сообщение
+    GW-&gt;&gt;GW: whitelist? тип? (голос→STT, файл→inbox)
+    GW-&gt;&gt;R: IncomingMessage
+    R-&gt;&gt;A: обработать
+    A--&gt;&gt;R: ответ (потоково)
+    R-&gt;&gt;GW: OutgoingMessage
+    GW-&gt;&gt;TGS: отправить/редактировать сообщение
+    TGS--&gt;&gt;U: ты видишь ответ
+</pre></div>
+<h2>8.7. Альтернативы, плюсы/минусы, решения</h2>
+<p><strong>Альтернативы каналу:</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Канал</th>
+<th>Плюс</th>
+<th>Минус</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Telegram (наш основной)</strong></td>
+<td>Работает из любой точки, голос/файлы/кнопки из коробки, не нужен сервер</td>
+<td>Зависимость от стороннего сервиса (единственный внешний трафик)</td>
+</tr>
+<tr>
+<td>Только локальный web-чат</td>
+<td>Полностью офлайн, ноль внешних зависимостей</td>
+<td>Доступен только когда ты за этим же компьютером</td>
+</tr>
+<tr>
+<td>Консоль (CLI)</td>
+<td>Идеально для отладки</td>
+<td>Не для повседневного использования</td>
+</tr>
+<tr>
+<td>Свой мобильный клиент</td>
+<td>Полный контроль</td>
+<td>Огромный объём работы, незачем при наличии Telegram</td>
+</tr>
+</tbody>
+</table></div>
+<p>Web-чат и CLI у нас <em>тоже есть</em> — как дополнительные каналы (тонкие адаптеры к тому же
+Router). Telegram — основной, потому что он единственный даёт «пишу ассистенту откуда
+угодно» без сервера.</p>
+<p><strong>Плюсы Telegram-подхода:</strong> мобильность без инфраструктуры; голос, файлы, кнопки
+бесплатно; нет входящих соединений (безопасность).</p>
+<p><strong>Минусы (скрытые):</strong> сообщения проходят через серверы Telegram (хоть и не хранятся у
+нас, это единственная точка, где твой текст покидает машину по пути к тебе же — но
+это <em>твой</em> трафик между <em>твоими</em> устройствами); зависимость от доступности Telegram;
+токен бота — секрет, утечёт — чужой сможет слать боту (но whitelist его отсечёт).</p>
+<p><strong>Твои решения:</strong> создать бота у @BotFather и положить токен в <code>config/local.yaml</code>
+(нужно к Sprint 1 — вероятно, уже сделано); отказаться ли от Telegram в пользу только
+web-чата (можно, если мобильность не нужна — глава 15); список разрешённых user_id
+(сейчас только ты).</p>
+<h2>8.8. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«Написал боту, а он молчит» — проверь: программа запущена? твой user_id в whitelist?
+  Ollama жива? Чужому боту он и должен молчать.</li>
+<li>«Ноутбук был выключен — сообщения потерялись?» — нет, Telegram хранит их несколько
+  дней; при запуске Gateway их заберёт (long polling подтянет накопленное).</li>
+<li>«Токен бота засветился» — немедленно перевыпусти у @BotFather; старый перестанет
+  работать. Whitelist — вторая линия обороны.</li>
+<li>«Хочу голосом, но распознаёт с ошибками» — faster-whisper small на CPU — компромисс
+  скорость/качество; можно взять модель побольше ценой скорости.</li>
+</ul>
+<hr>
+<h1 id="ch-9">Глава 9. Задачи</h1>
+<h2>9.1. Простое объяснение</h2>
+<p>Задачи — это то, ради чего ассистент становится по-настоящему полезным в быту: он не
+просто отвечает, а <em>помнит твои дела и сам напоминает о них вовремя</em>. Ты говоришь
+человеческим языком — «надо позвонить Ивану насчёт сметы в понедельник утром», — а
+ассистент превращает это в аккуратную запись со сроком и заводит будильник.</p>
+<p>Тут есть тонкость, которую важно почувствовать сразу. В связке «задача + напоминание»
+работают <strong>две очень разные натуры</strong>:
+- Понять, что ты имел в виду под «в понедельник утром» и «каждую первую пятницу
+  месяца», — это работа для <em>умной, но ненадёжной</em> LLM.
+- Сработать ровно в 9:00 в понедельник, даже если ноутбук только что включился, —
+  это работа для <em>тупого, но абсолютно надёжного</em> будильника.</p>
+<p>Смешивать их нельзя. Будильник, который «обычно звонит, но иногда задумался и забыл», —
+бесполезен. Поэтому в проекте эти две натуры строго разделены. Это тот же принцип
+«интерпретация отдельно, исполнение отдельно», что и в главе 3, — здесь он виден
+нагляднее всего.</p>
+<h2>9.2. Как агент хранит задачи и где они лежат</h2>
+<p>Задачи живут в <strong>SQLite</strong> (таблица <code>tasks</code>, модуль <code>modules/tasks/</code> — это Sprint 5).
+Каждая задача — структурированная запись:</p>
+<pre><code>Task:
+  title:      &quot;позвонить Ивану насчёт сметы&quot;
+  notes:      подробности, если есть
+  due:        точный срок (дата-время с часовым поясом) — или пусто
+  rrule:      правило повторения (для «каждый понедельник») — или пусто
+  project_id: привязка к проекту (для «что у меня по проекту X?»)
+  status:     open / done / cancelled
+  source:     ссылка на исходное сообщение (чтобы помнить, откуда задача)
+</code></pre>
+<p>Почему SQLite, а не векторы: задачи — это <strong>структурированные данные с точными
+полями</strong> (срок, статус, проект), по которым нужны точные запросы («покажи открытые
+задачи по проекту X со сроком на этой неделе»). Это классическая работа для SQL. Поиск
+задач <em>по смыслу</em> («что там было про смету?») добавляется поверх — семантикой, но
+основа реляционная.</p>
+<h2>9.3. Как ассистент понимает даты</h2>
+<p>Это самое хрупкое место, и сделано оно осторожно. Когда ты говоришь «через неделю» или
+«каждую первую пятницу», Task Manager обращается к LLM (роль <code>extraction</code>, маленькая
+3B-модель, <code>temperature: 0.0</code> для предсказуемости) и просит <strong>structured output</strong> —
+строго форматированный ответ по одной из трёх форм:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Ты сказал</th>
+<th>Тип</th>
+<th>Во что превращается</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>«в понедельник в 9»</td>
+<td>точная дата</td>
+<td><code>due: 2026-07-20T09:00+03:00</code></td>
+</tr>
+<tr>
+<td>«каждый понедельник»</td>
+<td>повторение</td>
+<td><code>rrule: FREQ=WEEKLY;BYDAY=MO</code> (стандарт RRULE)</td>
+</tr>
+<tr>
+<td>«после отпуска», «если не сделаю»</td>
+<td>условие-триггер</td>
+<td>триггер-условие для follow-up</td>
+</tr>
+</tbody>
+</table></div>
+<p>Три защиты от ошибок слабой модели (риск из roadmap Sprint 5):
+1. <strong>Часовой пояс</strong> передаётся модели явно (иначе «9 утра» неоднозначно) — из конфига
+   (допущение A-6).
+2. <strong>Валидация</strong> результата: получилась не дата или дата в прошлом — переспрос.
+3. <strong>Переспрос при неуверенности</strong>: «в этот понедельник или в следующий?» — лучше
+   уточнить, чем поставить не туда.</p>
+<p><strong>RRULE</strong> — это международный стандарт описания повторений (из формата календарей
+iCalendar). «Каждый второй вторник», «по будням», «раз в месяц 1-го» — всё это
+выражается строкой RRULE, и её понимают готовые библиотеки. LLM лишь <em>переводит</em> твою
+фразу в RRULE; дальше с ней работает детерминированный код.</p>
+<h2>9.4. Что такое Scheduler и как работают повторения</h2>
+<p><strong>Scheduler (планировщик)</strong> — это тот самый «тупой надёжный будильник». В проекте это
+обёртка над библиотекой <strong>APScheduler</strong> с хранением заданий в <strong>SQLite</strong> (модуль
+<code>modules/scheduler/</code>, Sprint 6). Две функции:</p>
+<pre><code>schedule_once(время, событие)   — сработать один раз в указанный момент
+schedule_rrule(rrule, событие)  — срабатывать по правилу повторения
+</code></pre>
+<p>Важнейшая деталь архитектуры: <strong>Scheduler сам ничего не исполняет.</strong> Когда приходит
+время, он просто публикует <em>событие</em> в шину (Event Bus): <code>reminder_fire(id)</code>. А уже
+Reminder Engine, услышав это событие, решает, что делать (актуально ли ещё напоминание,
+сформировать сообщение с кнопками, отдать Router'у). Зачем так: слабая связанность —
+Scheduler ничего не знает про напоминания, задачи или Telegram; он умеет только «в
+такой-то момент крикнуть в шину». Это делает его простым и надёжным.</p>
+<p><strong>Повторяющиеся задачи</strong> работают через RRULE + <code>schedule_rrule</code>: APScheduler сам
+вычисляет следующее срабатывание по правилу, снова и снова.</p>
+<h2>9.5. Что будет, если компьютер выключен?</h2>
+<p>Это главный вопрос надёжности, и ответ продуман (иначе вся затея с напоминаниями
+бессмысленна).</p>
+<p><strong>Задания хранятся в SQLite, а не в памяти.</strong> Выключил ноутбук — задания не пропали,
+они на диске. Включил — APScheduler восстанавливает их из SQLite (<code>restore из
+SQLite</code>). Дальше два случая:</p>
+<div class="diagram"><pre class="mermaid">flowchart TB
+    ON[&quot;Ноутбук включился,&lt;br/&gt;APScheduler читает задания из SQLite&quot;] --&gt; CHK{Было срабатывание,&lt;br/&gt;пока был выключен?}
+    CHK --&gt;|нет| WAIT[&quot;Ждёт своего времени как обычно&quot;]
+    CHK --&gt;|&quot;да, недавно&lt;br/&gt;(в пределах misfire_grace)&quot;| FIRE[&quot;Сработать сейчас&lt;br/&gt;(с опозданием, но сработать)&quot;]
+    CHK --&gt;|&quot;да, но очень давно&quot;| SKIP[&quot;Пропустить это срабатывание&lt;br/&gt;(не заваливать старьём)&lt;br/&gt;+ пометка в reminder_log&quot;]
+</pre></div>
+<ul>
+<li><strong>Напоминание на 9:00, ноутбук включился в 9:30</strong> — сработает в 9:30 (опоздало, но
+  не потерялось). За это отвечает <strong>misfire_grace</strong> — «допустимая просрочка»: сколько
+  можно опоздать и всё равно доставить.</li>
+<li><strong>Напоминание было три дня назад, всё это время ноутбук был выключен</strong> — не будем
+  бомбить тебя трёхдневным старьём; пропустим с пометкой (или, для важных, покажем в
+  утренней сводке).</li>
+<li><strong>Защита от двойной доставки</strong> (риск из roadmap): каждое срабатывание фиксируется в
+  <code>reminder_log</code>; если после сбоя система не уверена, доставила ли уже, — сверяется с
+  логом (идемпотентность), чтобы не прислать одно напоминание дважды.</li>
+</ul>
+<p>Честное ограничение: <strong>если в момент напоминания ноутбук выключен, оно придёт при
+следующем включении, а не «вовремя».</strong> Локальный ассистент физически не может напомнить,
+когда его «мозг» спит. Для критичных напоминаний это надо понимать (глава 15 — там же
+про варианты вроде дублирования в облачный календарь).</p>
+<h2>9.6. Как реализуются напоминания и follow-up</h2>
+<p>Напоминание — отдельная сущность (может ссылаться на задачу): одноразовое,
+повторяющееся (RRULE) или <strong>условное follow-up</strong> — «если не сделал X, напомни снова
+через 2 дня». Follow-up работает так: при срабатывании Reminder Engine проверяет, не
+закрыта ли задача; если открыта — планирует следующую проверку. Это цикл «пока не
+сделаешь — буду напоминать», реализованный через события и Scheduler. Полный поток —
+глава 12, сценарий 2 и <code>docs/05-flows.md</code> поток 3.</p>
+<h2>9.7. Альтернативы, плюсы/минусы, решения</h2>
+<p><strong>Альтернативы Scheduler'у:</strong> системный планировщик ОС (Windows Task Scheduler / cron)
+— но он не знает про наши задачи и события, пришлось бы городить мост; отдельный сервис
+очередей (Celery + Redis) — избыточно для одной машины. APScheduler + SQLite —
+встроенный, лёгкий, переживает перезапуск. Отсюда ADR-9.</p>
+<p><strong>Плюсы:</strong> надёжность (SQLite-store, misfire, идемпотентность); слабая связанность
+(Scheduler только публикует события); человеческий ввод дат через LLM.</p>
+<p><strong>Минусы (скрытые):</strong> напоминания не сработают при выключенной машине (см. 9.5);
+парсинг дат слабой моделью иногда ошибается (отсюда валидация и переспрос); RRULE
+покрывает не любые экзотические правила (но 99% бытовых — да).</p>
+<p><strong>Твои решения:</strong> <code>misfire_grace</code> (сколько опоздание ещё допустимо); часовой пояс в
+конфиге; политика для «умного момента» без срока (утро для планирования, рабочие часы
+для рабочих задач — эвристика, которую можно настраивать); держать ли ноутбук включённым
+в часы, когда важны напоминания.</p>
+<h2>9.8. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«Напоминание не пришло» — ноутбук был включён в тот момент? Проверь <code>reminder_log</code> и
+  логи Scheduler; возможно misfire_grace был превышен.</li>
+<li>«Пришло дважды» — не должно (идемпотентность по <code>reminder_log</code>); если случилось —
+  баг в фиксации доставки, смотри лог.</li>
+<li>«Понял дату неправильно» — слабая 3B-модель; помогает явный переспрос и проверка
+  «дата не в прошлом». Можно уточнять формулировку.</li>
+<li>«Хочу, чтобы напоминало, даже когда ноут выключен» — это уже за рамками локального
+  ассистента; вариант — двусторонний календарь (backlog), где событие дублируется в
+  облако с уведомлением на телефон.</li>
+</ul>
+<hr>
+<h1 id="ch-10">Глава 10. Архитектура проекта</h1>
+<p>Эта глава собирает все органы из предыдущих глав в единый организм и объясняет
+<em>правила</em>, по которым они соединены. Если предыдущие главы отвечали «что делает каждый
+орган», эта отвечает «почему они соединены именно так и что сломается, если убрать
+любой».</p>
+<h2>10.1. Простое объяснение</h2>
+<p>Представь хорошо организованную компанию. В ней есть отделы (модули), у каждого — своя
+зона ответственности и свой начальник. Отделы не лезут в чужие дела напрямую: если
+бухгалтерии нужно что-то от склада, она не роется на складских полках сама, а посылает
+<em>официальный запрос по установленной форме</em>. Есть общая доска объявлений (событийная
+шина), куда отделы вешают новости («пришёл новый груз»), и другие отделы реагируют,
+если им это интересно.</p>
+<p>Почему такая бюрократия, а не «все всё делают вместе по-семейному»? Потому что компания
+из трёх человек может работать по-семейному, а компания, которая должна прожить 3–5 лет
+и вырасти, — нет. Без границ отделы срастаются в «большой ком грязи», где нельзя
+поменять одно, не сломав другое. Границы — это цена, которую платят <em>сейчас</em>, чтобы
+не платить страшную цену <em>потом</em>.</p>
+<p>Наша система — именно такая компания в виде одной программы: <strong>модульный монолит</strong>.
+Один процесс (одна компания в одном здании), но внутри — строгие отделы с формальными
+интерфейсами.</p>
+<h2>10.2. Три правила, которые держат всё вместе</h2>
+<p>Вся архитектура держится на трёх правилах (их проверяет робот-инспектор <code>import-linter</code>
+в CI — если кто-то нарушит границу, сборка падает):</p>
+<ol>
+<li><strong>Модуль обращается к другому модулю только через его официальный интерфейс</strong>
+   (<code>interface.py</code>, формально — Python Protocol) — или через событие. Нельзя залезть в
+   чужие внутренности напрямую.</li>
+<li><strong>Таблицы БД принадлежат одному модулю.</strong> Память владеет своими таблицами, задачи —
+   своими. Читать чужие таблицы напрямую нельзя (только через интерфейс владельца).</li>
+<li><strong>Ядро (<code>core/</code>) не знает ни об одном модуле; модули не знают о каналах.</strong> Ядро
+   умеет крутить агентный цикл, не зная, существует ли вообще память или Telegram.</li>
+</ol>
+<p>Эти правила — не педантизм. Именно они дают обещанное в требованиях: любой модуль можно
+выключить (feature flag), заменить или вынести в отдельный процесс, не трогая остальное.
+Иллюстрация из твоего кода: модуль памяти подключён через <code>MemoryPort</code> — ядро знает
+абстрактный «порт памяти», но <em>не знает</em>, что за ним конкретный модуль с SQLite и FTS5.
+Выключи <code>modules.memory.enabled</code> — ядро продолжит работать, просто без памяти.</p>
+<h2>10.3. Каждый сервис: зачем существует и что будет, если убрать</h2>
+<p>Пройдёмся по всем органам. Колонка «если убрать» — лучший способ понять, зачем орган
+нужен.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Сервис</th>
+<th>Зачем существует</th>
+<th>Что делает</th>
+<th>Если убрать</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LLM Gateway</strong> (<code>llm/</code>)</td>
+<td>Единственная дверь к моделям</td>
+<td>Роли→модели, retry, таймауты, structured output, JSON-fallback, учёт токенов</td>
+<td>Каждый модуль сам стучится к Ollama, дублируя логику; смена модели — правки по всему коду</td>
+</tr>
+<tr>
+<td><strong>Message Router</strong> (<code>core/router.py</code>)</td>
+<td>Развязать каналы и мозг</td>
+<td>Нормализует вход, ведёт сессии, доставляет ответы в нужный канал</td>
+<td>Каждый канал знает внутренности агента; напоминания не доставить в новый канал</td>
+</tr>
+<tr>
+<td><strong>Agent Orchestrator</strong> (<code>core/agent/</code>)</td>
+<td>Крутить agent loop</td>
+<td>Вызовы LLM, исполнение инструментов, риск-подтверждения, лимиты</td>
+<td>Нет агентности вообще — только «вопрос-ответ» без действий</td>
+</tr>
+<tr>
+<td><strong>Context Builder</strong> (<code>core/agent/context.py</code>)</td>
+<td>Собрать промпт по бюджету</td>
+<td>Склеивает system + память + история + результаты, режет по приоритету</td>
+<td>Промпт раздувается → на CPU всё умирает по скорости; память не попадает к модели</td>
+</tr>
+<tr>
+<td><strong>Tool Registry</strong> (<code>core/tools/</code>)</td>
+<td>Единый учёт инструментов</td>
+<td>Регистрация, выдача по фильтрам, исполнение с валидацией и аудитом</td>
+<td>Инструменты разбросаны; нет уровней риска и аудита; destructive без подтверждения</td>
+</tr>
+<tr>
+<td><strong>Memory</strong> (<code>modules/memory/</code>)</td>
+<td>Долговременная память</td>
+<td>Факты, предпочтения, recall, забывание</td>
+<td>Ассистент забывает всё между сессиями — снова «справочное бюро»</td>
+</tr>
+<tr>
+<td><strong>RAG</strong> (<code>modules/rag/</code>)</td>
+<td>Поиск по документам</td>
+<td>Гибридный поиск, фильтры, цитаты</td>
+<td>«Найди в моих документах» не работает</td>
+</tr>
+<tr>
+<td><strong>File Indexer</strong> (<code>modules/indexer/</code>)</td>
+<td>Держать индекс актуальным</td>
+<td>Watcher, очередь, извлечение, чанкинг, эмбеддинг, каталог</td>
+<td>Индекс не обновляется; новые файлы не находятся</td>
+</tr>
+<tr>
+<td><strong>Task Manager</strong> (<code>modules/tasks/</code>)</td>
+<td>Помнить дела</td>
+<td>CRUD задач, парсинг дат, поиск</td>
+<td>Нет задач как сущности; напоминаниям не к чему привязаться</td>
+</tr>
+<tr>
+<td><strong>Reminder Engine</strong> (<code>modules/reminders/</code>)</td>
+<td>Приходить вовремя</td>
+<td>Одноразовые/RRULE/follow-up, кнопки, доставка через Router</td>
+<td>Ассистент не напоминает сам — только по прямому вопросу</td>
+</tr>
+<tr>
+<td><strong>Scheduler</strong> (<code>modules/scheduler/</code>)</td>
+<td>Надёжный «будильник»</td>
+<td>APScheduler+SQLite, публикация событий по времени</td>
+<td>Ничего не срабатывает по расписанию: ни напоминания, ни бэкапы, ни сводка</td>
+</tr>
+<tr>
+<td><strong>File Ops</strong> (<code>modules/fileops/</code>)</td>
+<td>Безопасно трогать файлы</td>
+<td>move/copy/rename/archive с undo, дубликаты</td>
+<td>«Разбери Downloads» не работает; нет undo-журнала</td>
+</tr>
+<tr>
+<td><strong>Config Service</strong> (<code>infra/config.py</code>)</td>
+<td>Единая правда о настройках</td>
+<td>yaml+env→валидированный конфиг, feature flags</td>
+<td>Настройки разбросаны; ошибка конфига всплывает в рантайме, а не на старте</td>
+</tr>
+<tr>
+<td><strong>Logging/Audit</strong> (<code>infra/</code>)</td>
+<td>Наблюдаемость и «что ты делал?»</td>
+<td>JSON-логи с request_id, append-only аудит</td>
+<td>Нельзя понять, что произошло; «что ты делал вчера?» не ответить</td>
+</tr>
+<tr>
+<td><strong>MCP Hub/Server</strong> (<code>mcp/</code>)</td>
+<td>Мост к внешним инструментам</td>
+<td>Подключение чужих MCP-серверов, экспорт своих</td>
+<td>Нет готовых интеграций конфигом; свой «мозг» не доступен из Claude Desktop</td>
+</tr>
+<tr>
+<td><strong>Backup</strong> (<code>infra/backup.py</code>)</td>
+<td>Пережить катастрофу</td>
+<td>Ночной бэкап + проверка восстановления</td>
+<td>Один сбой диска — и вся память/индекс потеряны навсегда</td>
+</tr>
+</tbody>
+</table></div>
+<h2>10.4. Как органы общаются: два способа</h2>
+<p>Важно понять два <em>разных</em> канала связи между модулями — их путают.</p>
+<p><strong>1. Прямой вызов через интерфейс (синхронно, «дай мне это сейчас»).</strong> Оркестратору
+нужен результат поиска <em>прямо сейчас</em>, чтобы продолжить ответ → он зовёт RAG через его
+интерфейс и ждёт ответа. Это как позвонить в отдел и дождаться ответа.</p>
+<p><strong>2. Событие через шину (асинхронно, «к сведению»).</strong> После ответа оркестратор кидает
+в шину <code>message_processed</code> и забывает — а память <em>потом</em>, когда захочет, это подхватит
+и решит, не запомнить ли факт. Это как повесить объявление на доску: кому интересно —
+среагирует, отправитель не ждёт.</p>
+<div class="diagram"><pre class="mermaid">flowchart TB
+    subgraph sync[&quot;Прямые вызовы (нужен ответ сейчас)&quot;]
+        ORCH[&quot;Orchestrator&quot;] --&gt;|&quot;search()&quot;| RAG[&quot;RAG&quot;]
+        ORCH --&gt;|&quot;recall()&quot;| MEM[&quot;Memory&quot;]
+        ORCH --&gt;|&quot;chat()&quot;| LLM[&quot;LLM Gateway&quot;]
+    end
+    subgraph async[&quot;События (к сведению, реакция потом)&quot;]
+        ORCH2[&quot;Orchestrator&quot;] -.-&gt;|&quot;message_processed&quot;| BUS[&quot;Event Bus&quot;]
+        WATCH[&quot;Watcher&quot;] -.-&gt;|&quot;file_changed&quot;| BUS
+        SCHED[&quot;Scheduler&quot;] -.-&gt;|&quot;reminder_fire&quot;| BUS
+        BUS -.-&gt; MEM2[&quot;Memory: извлечь факт&quot;]
+        BUS -.-&gt; IDX[&quot;Indexer: в очередь&quot;]
+        BUS -.-&gt; REM[&quot;Reminder: доставить&quot;]
+    end
+</pre></div>
+<p>Правило: <strong>если результат нужен для продолжения прямо сейчас — прямой вызов; если это
+реакция „после“ — событие.</strong> Событиями связаны именно фоновые реакции (память,
+индексация, напоминания), чтобы модули не выстраивались в жёсткую цепочку вызовов друг
+друга.</p>
+<h2>10.5. Альтернативы (та самая развилка A/B/C)</h2>
+<p>Напомню развилку из требований — теперь она должна читаться осмысленно:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Вариант</th>
+<th>Суть</th>
+<th>Вердикт</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A. Скрипты + фреймворк-комбайн</strong></td>
+<td>Собрать на LangChain за дни</td>
+<td>Быстрый прототип, но протекающие абстракции + breaking changes; ядро не под контролем</td>
+</tr>
+<tr>
+<td><strong>B. Микросервисы</strong></td>
+<td>Каждый модуль — отдельный процесс + брокер + Docker</td>
+<td>Вся цена распределённости, нулевая выгода на одной машине</td>
+</tr>
+<tr>
+<td><strong>C. Модульный монолит</strong> ⭐</td>
+<td>Один процесс, жёсткие границы модулей</td>
+<td>Наш выбор: скорость монолита + дисциплина границ</td>
+</tr>
+</tbody>
+</table></div>
+<p>Тонкость про исходное требование «не монолит»: оно на самом деле означало «не
+сильносвязанный ком», а не «обязательно микросервисы». Модульный монолит даёт слабую
+связанность <em>без</em> цены микросервисов. Это разрешение противоречия П-4.</p>
+<h2>10.6. Плюсы, минусы, решения, поздние вопросы</h2>
+<p><strong>Плюсы:</strong> быстрый старт и лёгкая отладка (всё в одном процессе, один стектрейс);
+дёшево по ресурсам (нет сети/сериализации между модулями — критично на слабом железе);
+расширяемость (новый инструмент/канал/источник — по чёткому рецепту, ядро не трогаем);
+управляемый рост (модуль выносится в процесс через MCP, когда реально нужно).</p>
+<p><strong>Минусы (скрытые):</strong> «средний» риск сползания в «ком» — держится только дисциплиной
+границ (поэтому import-linter в CI обязателен, а не по желанию); один процесс — тяжёлый
+баг в одном модуле теоретически может уронить всё (купируется таймаутами и обработкой
+ошибок на границах); всё на одной машине конкурирует за один CPU (глава 13).</p>
+<p><strong>Твои решения:</strong> какие модули включены (feature flags); когда выносить модуль в
+отдельный процесс (обычно — никогда на одной машине, но заложено); профили агента
+(какой набор инструментов в каком режиме).</p>
+<p><strong>Поздние вопросы:</strong> «хочу вынести RAG на домашний сервер» → он уже общается только
+через интерфейс, оборачивается в MCP-сервер, меняешь конфиг; «добавить голосовой
+канал» → новый адаптер в <code>channels/</code>, ядро не меняется; «import-linter ругается» →
+ты нарушил границу модуля, это фича, а не баг — смотри, какой импорт лишний.</p>
+<hr>
+<h1 id="ch-11">Глава 11. Хранение данных</h1>
+<h2>11.1. Простое объяснение</h2>
+<p>У ассистента много «памяти» в широком смысле — и вся она где-то физически лежит на
+диске. Новичку кажется, что это одна большая куча. На самом деле у каждого типа данных
+— своё место, выбранное под его природу. Как в доме: продукты в холодильнике, книги на
+полке, документы в сейфе — не потому что так «красиво», а потому что у каждого свои
+требования к хранению.</p>
+<p>Главный принцип, ради которого всё складывается аккуратно: <strong>всё состояние системы
+лежит в одной папке <code>data/</code>.</strong> Скопировал <code>data/</code> + конфиг на другую машину — перенёс
+ассистента целиком, со всей памятью и индексом. Одна папка = один объект для бэкапа и
+переноса. Это делает систему по-настоящему <em>твоей</em> и переносимой.</p>
+<h2>11.2. Что где лежит и почему именно там</h2>
+<p>Два главных хранилища с разными характерами:</p>
+<p><strong>SQLite</strong> — для всего <em>структурированного и точного</em>: записи с полями, связи, точные
+запросы. Один файл <code>data/sba.db</code>. Транзакции, надёжность, «просто открыть и посмотреть».</p>
+<p><strong>Qdrant</strong> — для всего <em>смыслового и приблизительного</em>: векторы, поиск по похожести.
+Папка <code>data/qdrant/</code>.</p>
+<p>Полная карта данных:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Данные</th>
+<th>Где</th>
+<th>Почему там</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Документы (оригиналы)</strong></td>
+<td>Там, где лежат у тебя (вне <code>data/</code>)</td>
+<td>Мы их не копируем — только ссылаемся; они твои</td>
+</tr>
+<tr>
+<td><strong>Индекс (векторы чанков)</strong></td>
+<td>Qdrant (<code>data/qdrant/</code>)</td>
+<td>Смысловой поиск — природа векторной БД</td>
+</tr>
+<tr>
+<td><strong>Копии текста чанков + метаданные</strong></td>
+<td>Qdrant payload</td>
+<td>Рядом с вектором, чтобы вернуть цитату</td>
+</tr>
+<tr>
+<td><strong>Кэш извлечённого текста</strong></td>
+<td><code>data/files_cache/</code></td>
+<td>Быстро «прочитать документ целиком» без повторного извлечения</td>
+</tr>
+<tr>
+<td><strong>Каталог файлов</strong> (path, hash, mtime)</td>
+<td>SQLite <code>files</code></td>
+<td>Точные диффы по хэшу — работа для SQL</td>
+</tr>
+<tr>
+<td><strong>История чатов</strong></td>
+<td>SQLite <code>conversations</code>, <code>messages</code></td>
+<td>Структурированные сообщения сессий</td>
+</tr>
+<tr>
+<td><strong>Память: факты</strong></td>
+<td>SQLite <code>memory_facts</code> (+ вектор в Qdrant <code>memory</code>)</td>
+<td>Точные поля (тип, subject, confidence) + смысловой recall</td>
+</tr>
+<tr>
+<td><strong>Память: предпочтения</strong></td>
+<td>SQLite <code>preferences</code></td>
+<td>Ключ-значение, всегда в промпт</td>
+</tr>
+<tr>
+<td><strong>Память: эпизоды</strong></td>
+<td>SQLite <code>episodes</code> (+ вектор в Qdrant)</td>
+<td>Суммаризации с датами</td>
+</tr>
+<tr>
+<td><strong>Задачи</strong></td>
+<td>SQLite <code>tasks</code></td>
+<td>Точные поля: срок, статус, проект</td>
+</tr>
+<tr>
+<td><strong>Напоминания</strong></td>
+<td>SQLite <code>reminders</code>, <code>reminder_log</code></td>
+<td>Точность + журнал доставки (идемпотентность)</td>
+</tr>
+<tr>
+<td><strong>Задания планировщика</strong></td>
+<td>SQLite (APScheduler job store)</td>
+<td>Переживают перезапуск</td>
+</tr>
+<tr>
+<td><strong>Настройки</strong></td>
+<td><code>config/*.yaml</code> (вне <code>data/</code>)</td>
+<td>Правится руками, версионируется отдельно</td>
+</tr>
+<tr>
+<td><strong>Логи</strong></td>
+<td><code>data/logs/</code> (JSON с ротацией)</td>
+<td>Наблюдаемость, поиск по request_id</td>
+</tr>
+<tr>
+<td><strong>Аудит действий</strong></td>
+<td>SQLite (append-only)</td>
+<td>«Что ты делал вчера?»; неизменяемая летопись</td>
+</tr>
+<tr>
+<td><strong>Очередь индексации</strong></td>
+<td>SQLite</td>
+<td>Переживает перезапуск</td>
+</tr>
+<tr>
+<td><strong>Бэкапы</strong></td>
+<td><code>data/backups/</code> (или отдельный диск)</td>
+<td>Копии всего вышеперечисленного</td>
+</tr>
+</tbody>
+</table></div>
+<p>Обрати внимание на закономерность: <strong>точное → SQLite, смысловое → Qdrant, а факты и
+эпизоды живут в обоих сразу</strong> (SQLite — источник истины и точные поля; Qdrant — способ
+найти по смыслу). Это не дублирование ради дублирования: у каждой копии своя работа.</p>
+<h2>11.3. Структура каталогов</h2>
+<pre><code>second-brain/
+├── config/
+│   ├── default.yaml     # дефолты (в git)
+│   ├── local.yaml       # твои переопределения: токен TG, allowed_roots (НЕ в git)
+│   └── models.yaml      # роли моделей → рантайм/модель
+│
+├── data/                # ВСЁ состояние (в .gitignore); путь — в конфиге
+│   ├── sba.db           #   SQLite: история, память, задачи, напоминания, аудит, каталог
+│   ├── qdrant/          #   векторный индекс (RAG + память)
+│   ├── files_cache/     #   извлечённый текст, OCR-кэш
+│   ├── inbox/           #   присланные в TG файлы (ждут индексации)
+│   ├── logs/            #   JSON-логи с ротацией
+│   └── backups/         #   версионированные бэкапы (retention 7d + 4w)
+│
+└── src/sba/             # код (глава 10)
+</code></pre>
+<p>Ключевой момент: <strong><code>config/local.yaml</code> не в git</strong> — там секреты (токен Telegram) и
+машинно-зависимое (пути <code>allowed_roots</code>, твой user_id <code>909506738</code>). <code>data/</code> тоже не в
+git — это состояние, не код. В git только код и дефолтный конфиг. Это правило прямо
+записано в <code>CLAUDE.md</code>: не переписывать <code>local.yaml</code>.</p>
+<h2>11.4. Почему SQLite, а не «настоящая» база</h2>
+<p>Ты спрашивал в задании «можно ли хранить всё в SQLite» — отвечаю здесь, потому что это
+частый и важный вопрос.</p>
+<p>SQLite — это не «база для бедных», это <strong>самая распространённая СУБД в мире</strong> (она в
+каждом телефоне, браузере, самолёте). Для одного пользователя на одной машине она
+идеальна: ноль эксплуатации (один файл, никакого сервера), транзакции, надёжность,
+режим WAL для параллельного чтения-записи. Отсюда ADR-4: SQLite (WAL) для всех
+реляционных данных.</p>
+<p>Почему тогда <em>не</em> всё в SQLite (и векторы тоже)? Потому что векторный поиск на миллион
+чанков — не сильная сторона SQLite (расширение sqlite-vec упирается в масштаб и требует
+ручного гибрида). Смысловой поиск отдаём Qdrant, который для этого создан. Но <em>всё
+структурированное</em> — да, в одном <code>sba.db</code>.</p>
+<h2>11.5. Бэкапы: как не потерять всё</h2>
+<p>Раз всё в <code>data/</code>, бэкап — это грамотная копия <code>data/</code>. Ночью (Sprint 10):
+- SQLite → <code>VACUUM INTO</code> (консистентная копия без остановки работы);
+- Qdrant → штатный снапшот;
+- конфиг → копия;
+- всё это → версионированная папка с retention: 7 ежедневных + 4 недельных.</p>
+<p>И — редкая, но важная деталь — <strong>ежемесячная автоматическая проверка восстановления</strong>:
+система сама поднимает бэкап во временную папку и делает smoke-запрос. Бэкап, который
+никогда не проверяли на восстановление, — это не бэкап, а надежда. При неудаче — отчёт
+в Telegram.</p>
+<h2>11.6. Альтернативы, плюсы/минусы, решения</h2>
+<p><strong>Альтернативы:</strong> всё в Postgres (сервер, избыточно); всё в файлах-JSON (нет транзакций,
+медленный поиск); облачное хранилище (против Local First). Наш сплит SQLite+Qdrant —
+минимум эксплуатации при нужных возможностях.</p>
+<p><strong>Плюсы:</strong> переносимость (одна папка); ноль серверов; правильный инструмент под каждый
+тип данных; простой бэкап.</p>
+<p><strong>Минусы (скрытые):</strong> два хранилища надо держать <em>согласованными</em> (удалил файл → чанки
+из Qdrant <em>и</em> запись из каталога SQLite; если рассинхрон — «призрачные» результаты
+поиска на удалённые файлы); Qdrant-файлы нельзя «открыть глазами» как SQLite (нужны
+снапшоты для бэкапа); embedded-Qdrant держит часть индекса в RAM.</p>
+<p><strong>Твои решения:</strong> куда складывать бэкапы (тот же диск — плохо; лучше внешний/сетевой);
+retention (сколько копий держать — место против глубины истории); шифрование на диске
+(Q-7: BitLocker уже шифрует весь диск? нужен ли SQLCipher поверх?); политика вычистки
+retracted-фактов и старых сессий.</p>
+<h2>11.7. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«Перенести ассистента на новый компьютер» — скопировать <code>data/</code> + <code>config/</code>,
+  поставить код и Ollama, скачать модели. Всё состояние переедет.</li>
+<li>«Удалил индекс Qdrant случайно» — данные (память, задачи) целы в SQLite; теряется
+  только поиск по документам; лечится переиндексацией (<code>reindex.py</code>). См. главу 15.</li>
+<li>«Sqlite.db распух» — <code>VACUUM</code> сжимает; аудит и логи чистятся по retention (Sprint 10).</li>
+<li>«Рассинхрон каталога и Qdrant» — полный <code>reindex.py</code> пересобирает индекс из каталога
+  как источника истины.</li>
+</ul>
+<hr>
+<h1 id="ch-12">Глава 12. Что происходит при типичных сценариях</h1>
+<p>Это глава-сборка: она берёт все органы из предыдущих глав и показывает их в работе,
+по шагам, на твоих же примерах. Читать её стоит после остальных — здесь всё соединяется.</p>
+<h2>12.1. «Где лежит мой договор аренды?»</h2>
+<div class="diagram"><pre class="mermaid">sequenceDiagram
+    actor U as Ты
+    participant TG as Telegram GW
+    participant R as Router
+    participant O as Orchestrator
+    participant CB as Context Builder
+    participant M as Memory
+    participant L as LLM
+    participant RAG as RAG
+    U-&gt;&gt;TG: «Где лежит мой договор аренды?»
+    TG-&gt;&gt;TG: whitelist ✓
+    TG-&gt;&gt;R: IncomingMessage
+    R-&gt;&gt;O: обработать (сессия, история)
+    O-&gt;&gt;CB: собрать контекст
+    CB-&gt;&gt;M: preferences() + recall(&quot;договор аренды&quot;)
+    M--&gt;&gt;CB: предпочтения; факт «аренда — проект Офис»
+    CB--&gt;&gt;O: промпт (≤1500 токенов)
+    O-&gt;&gt;L: chat(+инструменты: search_documents, ...)
+    L--&gt;&gt;O: search_documents(query=&quot;договор аренды&quot;)
+    Note over O: risk=read → сразу, запись в audit
+    O-&gt;&gt;RAG: гибридный поиск
+    RAG--&gt;&gt;O: топ-фрагменты: аренда_офис_2025.pdf стр.1
+    O-&gt;&gt;L: chat(+результаты)
+    L--&gt;&gt;O: «Договор: .../аренда_офис_2025.pdf, стр. 1, срок до 31.12.2025»
+    O-&gt;&gt;R: ответ (streaming)
+    R-&gt;&gt;TG: доставка
+    TG-&gt;&gt;U: ответ с путём и страницей
+    O--&gt;&gt;M: message_processed (фон: запомнить?)
+</pre></div>
+<p><strong>Что здесь важно:</strong> модель не искала сама (RAG искал); ответ с точной цитатой (файл +
+страница); память подсказала контекст («аренда = проект Офис»), сузив поиск; после
+ответа — фоновое «не запомнить ли что-то».</p>
+<h2>12.2. «Напомни через две недели продать велосипед»</h2>
+<ol>
+<li>Telegram → Router → Orchestrator.</li>
+<li>Модель зовёт <code>create_reminder(text="продать велосипед", when="через две недели")</code>.</li>
+<li>Task/Reminder просит LLM (<code>extraction</code>, 3B) перевести «через две недели» + сегодня +
+   tz → точную дату <code>2026-08-01T10:00+03</code>.</li>
+<li>Валидация: дата в будущем ✓.</li>
+<li><code>Scheduler.schedule_once(2026-08-01T10:00, reminder_fire)</code> — задание в SQLite.</li>
+<li>Ответ: «Напомню 1 августа в 10:00».</li>
+<li><strong>Через две недели:</strong> Scheduler публикует <code>reminder_fire</code> → Reminder Engine проверяет
+   актуальность → формирует сообщение с кнопками [✅][⏰][✖] → Router → Telegram.</li>
+<li>Доставка фиксируется в <code>reminder_log</code> (защита от повтора).</li>
+</ol>
+<p><strong>Ключ:</strong> интерпретация «через две недели» — LLM; срабатывание точно в срок — код.
+Переживает перезапуски (задание на диске).</p>
+<h2>12.3. «Сколько примерно стоит этот объектив?»</h2>
+<p>Сценарий про <em>границы</em> и включаемость:
+- Если <code>web_search</code> <strong>выключен</strong> (дефолт): модель не видит инструмента → честно:
+  «не умею искать актуальные цены в интернете» (а не выдумывает цену).
+- Если <strong>включён</strong> тобой явно: модель зовёт <code>web_search("цена объектив X")</code> → HTTP через
+  <strong>единый клиент с allowlist хостов</strong> (внешний трафик только к разрешённым) → результат
+  → ответ с оговоркой, что цена приблизительная.</p>
+<p><strong>Ключ:</strong> ассистент не может выйти в интернет, если ты этого явно не разрешил; это и
+безопасность, и защита от галлюцинаций. Отказ «не умею» — правильное поведение, не баг.</p>
+<h2>12.4. «Я перенёс папку с документами»</h2>
+<ol>
+<li>Watcher ловит перемещение (или скан замечает позже).</li>
+<li>Для каждого файла: хэш совпадает с каталогом? → <strong>да</strong>.</li>
+<li>Значит содержимое не изменилось → обновляются <strong>только пути</strong> в каталоге <code>files</code>.</li>
+<li>Векторы в Qdrant <strong>не трогаются</strong> (их payload с путём обновляется).</li>
+<li>Стоимость — секунды. Переиндексации нет.</li>
+</ol>
+<p><strong>Ключ (глава 7):</strong> «переехал» ≠ «изменился». Хэш отличает одно от другого и спасает от
+напрасных часов переиндексации. Даже если ОС сказала «delete+create» вместо «move» —
+проверка «нет ли файла с таким хэшем» распознаёт перемещение.</p>
+<h2>12.5. «Я удалил половину файлов»</h2>
+<ol>
+<li>Watcher ловит серию <code>deleted</code> (или скан замечает пропажу).</li>
+<li>Для каждого удалённого: чанки убираются из Qdrant, запись — из каталога.</li>
+<li>Поиск перестаёт возвращать удалённые файлы (нет «призраков»).</li>
+<li>Ничего не переиндексируется — только удаление. Быстро.</li>
+</ol>
+<p><strong>Ключ:</strong> согласованность двух хранилищ (Qdrant + каталог SQLite) — удаление проходит в
+обоих, иначе поиск возвращал бы ссылки на несуществующие файлы. Оригиналы — твои: если
+удалил зря, восстановление из корзины ОС система заметит как <code>created</code>.</p>
+<h2>12.6. «Я добавил новый внешний диск»</h2>
+<ol>
+<li>Диск в whitelisted корнях? Если нет — <strong>ничего не происходит</strong> (границы безопасности).</li>
+<li>Если да — периодический скан обнаруживает новое содержимое.</li>
+<li>Всё содержимое встаёт в очередь как первичная индексация.</li>
+<li>Идёт в паузах диалога и тихие часы, с низким приоритетом.</li>
+<li>На CPU большой диск — это часы/ночи; нормально, инкрементально.</li>
+</ol>
+<p><strong>Ключ:</strong> новый источник = первичная индексация, самая дорогая операция; спешки нет,
+диалогу не мешает. Границы (whitelisted корни) защищают от случайной индексации всего
+подряд.</p>
+<h2>12.7. «Я загрузил 20 PDF одновременно»</h2>
+<p>Два случая:
+- <strong>Через Telegram:</strong> каждый файл → <code>data/inbox/</code> → событие <code>file_received</code> → очередь.
+  Плюс агент может кратко отреагировать на каждый («принял файл X»).
+- <strong>Скопировал в папку:</strong> watcher ловит 20 <code>created</code> → 20 задач в очередь.</p>
+<p>Дальше:
+1. Дедупликация в очереди (если какой-то файл уже есть по хэшу — пропуск).
+2. Извлечение → чанкинг → эмбеддинг по очереди, 1–2 воркера.
+3. Приоритет: только что присланное — раньше фоновой массовой дозагрузки.
+4. На CPU 20 PDF — это минуты–десятки минут; «в течение минут» появляются в поиске
+   (критерий Sprint 4).
+5. Диалог не блокируется: очередь паузится, когда ты пишешь.</p>
+<p><strong>Ключ:</strong> очередь + приоритеты + пауза на диалог + дедуп. Массовая загрузка не «вешает»
+ассистента, а переваривается фоном.</p>
+<h2>12.8. Ночные фоновые циклы (что происходит, пока ты спишь)</h2>
+<div class="diagram"><pre class="mermaid">flowchart TB
+    subgraph night[&quot;Тихие часы (напр. 02:00–06:00)&quot;]
+        S[&quot;Scheduler будит задачи&quot;] --&gt; C1[&quot;Консолидация памяти:&lt;br/&gt;сессии дня → эпизоды → факты&quot;]
+        S --&gt; C2[&quot;Полный скан источников:&lt;br/&gt;диффы по хэшу → дозаиндексация&quot;]
+        S --&gt; C3[&quot;Бэкап data/ + retention&quot;]
+        S --&gt; C4[&quot;Гигиена задач: просроченные →&lt;br/&gt;task_overdue → follow-up&quot;]
+    end
+    M[&quot;Scheduler 08:30&quot;] --&gt; MB[&quot;Утренняя сводка (профиль morning-brief):&lt;br/&gt;задачи на сегодня, напоминания,&lt;br/&gt;вчерашние хвосты → Telegram&quot;]
+</pre></div>
+<p><strong>Ключ:</strong> тяжёлое (консолидация памяти, полная сверка индекса, бэкап) — ночью, когда
+CPU свободен и спешить некуда. К утру всё готово, и в 08:30 приходит сводка. Если ночью
+ноутбук был выключен — задачи наверстаются при следующем включении.</p>
+<hr>
+<h1 id="ch-13">Глава 13. Производительность</h1>
+<p>Эта глава — про то, что на твоём железе будет быстрым, что медленным, и <em>почему</em>. Без
+неё легко ждать от CPU-ноутбука скорости, которой у него быть не может, и разочароваться
+на ровном месте. С ней — понимаешь, где узкое горло и на какие рычаги давить.</p>
+<h2>13.1. Простое объяснение</h2>
+<p>Представь, что вся система — это кухня с одним поваром (твой процессор). Повар один, и
+он может делать только одно дело за раз. Есть быстрые операции (достать тарелку из
+шкафа — это как поиск в базе) и есть медленные (приготовить сложное блюдо с нуля — это
+как подумать языковой моделью). Когда повар готовит блюдо, он не может одновременно
+резать салат — поэтому мы выстраиваем очередь и делаем важное (твой диалог) вперёд
+фонового (индексация).</p>
+<p>Главное, что нужно принять: <strong>самая дорогая операция в системе — это „подумать“
+языковой моделью, и на CPU она стоит десятки секунд.</strong> Всё остальное — на фоне этого
+почти бесплатно. Поэтому вся оптимизация системы сводится к одному: <em>звать модель реже
+и с более короткими промптами</em>.</p>
+<h2>13.2. Что делает GPU и что делает CPU (в твоём случае)</h2>
+<p>Тут важная развилка, и у тебя она предопределена железом.</p>
+<p><strong>В обычной AI-системе</strong> тяжёлые вычисления (перемножение матриц в нейросети) делает
+<strong>GPU</strong> (видеокарта) — она создана для тысяч параллельных умножений и делает это в
+десятки раз быстрее процессора.</p>
+<p><strong>У тебя дискретного GPU нет.</strong> Есть встроенная Intel Iris Xe, но Ollama её не
+использует (она умеет только CUDA/ROCm/Metal — Nvidia/AMD/Apple). Поэтому:</p>
+<p><strong>Всё считает CPU.</strong> И языковую модель, и эмбеддинги, и распознавание речи. Это работает
+(7B в Q4 → 3–6 токенов/с генерации), но небыстро. Отсюда все компромиссы проекта.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Задача</th>
+<th>На GPU (если бы был)</th>
+<th>На твоём CPU</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Генерация 7B</td>
+<td>30–100+ ток/с</td>
+<td>3–6 ток/с</td>
+</tr>
+<tr>
+<td>Обработка промпта (prefill)</td>
+<td>сотни ток/с</td>
+<td>15–40 ток/с</td>
+</tr>
+<tr>
+<td>Эмбеддинг корпуса</td>
+<td>минуты</td>
+<td>часы</td>
+</tr>
+</tbody>
+</table></div>
+<p>Не расстраивайся: для <em>личного</em> ассистента, где ответ за 10–30 секунд приемлем, CPU
+достаточно. Мы просто проектируем вокруг его скорости, а не вопреки ей.</p>
+<h2>13.3. Что дорого, что дёшево</h2>
+<p>Порядки величин на i7-1165G7 — это твоя «карта местности»:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Операция</th>
+<th>Стоимость</th>
+<th>Комментарий</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Вызов LLM (chat, 7B)</strong></td>
+<td>🔴 Очень дорого</td>
+<td>Десятки секунд; главный расход. Каждый круг агента = +один вызов</td>
+</tr>
+<tr>
+<td><strong>Обработка длинного промпта</strong></td>
+<td>🔴 Дорого</td>
+<td>2000 токенов ≈ минута только prefill. Отсюда бюджет промпта</td>
+</tr>
+<tr>
+<td><strong>Первичная индексация корпуса</strong></td>
+<td>🔴 Дорого</td>
+<td>Часы/ночи; но фоново и разово</td>
+</tr>
+<tr>
+<td><strong>Эмбеддинг одного запроса</strong></td>
+<td>🟡 Средне</td>
+<td>Доли секунды–секунды (маленькая модель)</td>
+</tr>
+<tr>
+<td><strong>Распознавание голоса (Whisper)</strong></td>
+<td>🟡 Средне</td>
+<td>~реальное время (10 сек аудио ≈ 10 сек)</td>
+</tr>
+<tr>
+<td><strong>Вызов LLM (extraction, 3B)</strong></td>
+<td>🟡 Средне</td>
+<td>Вдвое-втрое быстрее 7B; фоновая роль</td>
+</tr>
+<tr>
+<td><strong>Векторный поиск в Qdrant</strong></td>
+<td>🟢 Дёшево</td>
+<td>Миллисекунды даже на большом корпусе (HNSW)</td>
+</tr>
+<tr>
+<td><strong>Запрос в SQLite</strong></td>
+<td>🟢 Дёшево</td>
+<td>Миллисекунды</td>
+</tr>
+<tr>
+<td><strong>Событие в шине, аудит</strong></td>
+<td>🟢 Почти бесплатно</td>
+<td>Микросекунды</td>
+</tr>
+</tbody>
+</table></div>
+<p>Вывод, который надо усвоить: <strong>поиск (Qdrant, SQLite) — дёшев; думание (LLM) — дорого.</strong>
+Поэтому RAG-ответ (30–45 сек) — это не «поиск медленный», а «модель дважды думала»
+(один раз чтобы решить искать, второй — чтобы сформулировать ответ по найденному).</p>
+<h2>13.4. Сколько нужно памяти</h2>
+<p>Раскладка твоих 16 ГБ RAM в типичный момент:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Потребитель</th>
+<th>Память</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>ОС Windows + твои программы</td>
+<td>~4–6 ГБ</td>
+</tr>
+<tr>
+<td>LLM (qwen2.5:7b Q4, резидентно)</td>
+<td>~4.5–5 ГБ</td>
+</tr>
+<tr>
+<td>Эмбеддер (e5-small, in-process)</td>
+<td>~0.3–0.5 ГБ</td>
+</tr>
+<tr>
+<td>Qdrant embedded (индекс в RAM)</td>
+<td>зависит от корпуса, сотни МБ–ГБ</td>
+</tr>
+<tr>
+<td>Наш процесс (Python + буферы)</td>
+<td>~0.3–0.5 ГБ</td>
+</tr>
+<tr>
+<td><strong>Итого</strong></td>
+<td>комфортно для одной 7B-модели</td>
+</tr>
+</tbody>
+</table></div>
+<p>Отсюда три решения (уже в конфиге): одна LLM в памяти за раз
+(<code>OLLAMA_MAX_LOADED_MODELS=1</code>); эмбеддер маленький; на большом корпусе — квантование
+векторов Qdrant. Модель на 14B не влезла бы комфортно — ещё одна причина остаться на 7B.</p>
+<h2>13.5. Как система масштабируется</h2>
+<p>Два направления роста, и они по-разному упираются:</p>
+<p><strong>Рост корпуса документов (больше файлов):</strong> Qdrant тянет до ~1 млн чанков на десктопе
+(NFR-5: до ~100 тыс. документов). Поиск остаётся быстрым (HNSW почти не зависит от
+размера). Упирается в: время первичной индексации (часы→сутки) и RAM под индекс.
+Рычаги: квантование векторов, server-режим Qdrant, e5-small вместо bge-m3.</p>
+<p><strong>Рост нагрузки диалогом (больше запросов):</strong> тут упор жёсткий — <strong>один CPU, одна
+модель, один пользователь.</strong> Система намеренно <em>не</em> рассчитана на параллельные диалоги
+(тебе это и не нужно). Фоновое (индексация, память) сериализуется за диалогом. Хочешь
+принципиально быстрее — это апгрейд железа (GPU/мини-ПК), а не кода: перенёс <code>data/</code> +
+конфиг, всё работает (NFR-9).</p>
+<div class="diagram"><pre class="mermaid">flowchart LR
+    subgraph now[&quot;Сейчас: CPU-ноутбук&quot;]
+        A[&quot;Диалог: 10–45 сек&quot;] 
+        B[&quot;Корпус: до ~1 млн чанков&quot;]
+        C[&quot;1 пользователь, 1 модель&quot;]
+    end
+    subgraph up[&quot;Апгрейд (когда/если понадобится)&quot;]
+        D[&quot;GPU/мини-ПК:&lt;br/&gt;диалог в разы быстрее&quot;]
+        E[&quot;Qdrant server:&lt;br/&gt;корпус больше&quot;]
+    end
+    now --&gt;|&quot;перенос data/ + конфиг,&lt;br/&gt;код не меняется&quot;| up
+</pre></div>
+<h2>13.6. Что делает систему субъективно быстрой</h2>
+<p>Даже при медленном железе есть приёмы, чтобы <em>ощущалось</em> живо (они уже в проекте):
+- <strong>Streaming</strong> — ответ печатается по мере генерации, ты не ждёшь молча.
+- <strong>Heartbeat</strong> «модель думает…» — видно, что система жива во время долгого prefill.
+- <strong>Бюджет промпта</strong> — короткий промпт = быстрее первое слово.
+- <strong>Маленькая модель на фон</strong> — извлечение памяти не тормозит следующий диалог.
+- <strong>Пауза индексации на диалог</strong> — твой вопрос не ждёт, пока CPU занят фоном.
+- <strong>Фильтр инструментов (≤6–8)</strong> — меньше промпт, реже неверный выбор (меньше лишних кругов).</p>
+<h2>13.7. Альтернативы, минусы, решения</h2>
+<p><strong>Альтернатива:</strong> облачная модель на роль chat — ответы в разы быстрее и умнее. Против
+Local First, но «форточка» есть (явно включить облако на роль). Твоё решение, если
+скорость 7B станет невыносимой.</p>
+<p><strong>Скрытые узкие места:</strong> первый ответ после простоя (модель грузится с диска ~5 ГБ);
+длинная агентная цепочка (3 инструмента = 3+ вызова LLM = минуты); одновременная тяжёлая
+фоновая работа (её и сериализуем).</p>
+<p><strong>Твои решения:</strong> держать ли модель резидентно (<code>keep_alive</code>, быстрее отклик ценой RAM);
+границы тихих часов; число воркеров индексации; эксперимент с ipex-llm (Iris Xe, ~1.5–2×).</p>
+<h2>13.8. Вопросы, которые возникнут позже</h2>
+<ul>
+<li>«Почему RAG-ответ 40 секунд, а поиск „мгновенный“?» — поиск и правда мгновенный;
+  время — это два думания модели вокруг него.</li>
+<li>«Можно ли ускорить?» — короче промпт (главный рычаг), меньше кругов агента, ipex-llm,
+  в пределе — GPU.</li>
+<li>«Система тормозит, когда работаю в других программах» — CPU делится; тяжёлый фон
+  уступает, но чужие программы с ассистентом за CPU конкурируют. Тихие часы — ночью.</li>
+</ul>
+<hr>
+<h1 id="ch-14">Глава 14. Стоимость эксплуатации</h1>
+<p>«Локально и бесплатно» — правда лишь наполовину. Денег ты почти не платишь, но платишь
+<em>ресурсами</em>: временем процессора, памятью, местом на диске, электричеством. Эта глава —
+честный счёт, чтобы не было сюрпризов.</p>
+<h2>14.1. Простое объяснение</h2>
+<p>Облачный ChatGPT берёт деньги за каждый запрос, но взамен даёт чужие мощные компьютеры.
+Твой локальный ассистент денег за запросы не берёт — но <em>работает на твоём ноутбуке</em>,
+а значит тратит его ресурсы: греет процессор, занимает память и диск, немного увеличивает
+счёт за электричество. Это не «бесплатно», это «оплачено заранее покупкой ноутбука плюс
+копейки за свет».</p>
+<p>Главная мысль: <strong>основная цена — не деньги, а то, что часть твоего ноутбука постоянно
+занята ассистентом.</strong> Разберём, что именно и сколько.</p>
+<h2>14.2. Что работает постоянно, а что — по требованию</h2>
+<p>Это ключевое разделение для понимания расхода ресурсов:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Компонент</th>
+<th>Режим</th>
+<th>Расход</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Наш процесс (sba)</strong></td>
+<td>Постоянно (сервис)</td>
+<td>~0.3–0.5 ГБ RAM, почти 0% CPU в простое</td>
+</tr>
+<tr>
+<td><strong>Ollama (сервис)</strong></td>
+<td>Постоянно слушает</td>
+<td>Почти 0% CPU в простое</td>
+</tr>
+<tr>
+<td><strong>LLM в памяти</strong></td>
+<td>Постоянно, если <code>keep_alive</code></td>
+<td>~5 ГБ RAM; 0% CPU, пока не спросили</td>
+</tr>
+<tr>
+<td><strong>Telegram polling</strong></td>
+<td>Постоянно</td>
+<td>Ничтожный трафик, ~0% CPU</td>
+</tr>
+<tr>
+<td><strong>Watcher файлов</strong></td>
+<td>Постоянно</td>
+<td>Почти 0% CPU (реагирует на события)</td>
+</tr>
+<tr>
+<td><strong>Вызов LLM</strong></td>
+<td>По требованию</td>
+<td>🔴 100% CPU на десятки секунд</td>
+</tr>
+<tr>
+<td><strong>Индексация</strong></td>
+<td>По требованию/ночью</td>
+<td>🔴 высокий CPU, но фоново и с паузами</td>
+</tr>
+<tr>
+<td><strong>Whisper (голос)</strong></td>
+<td>Только при голосовом</td>
+<td>🟡 CPU на время распознавания</td>
+</tr>
+<tr>
+<td><strong>Ночные джобы</strong></td>
+<td>По расписанию</td>
+<td>🔴 CPU ночью (консолидация, бэкап, скан)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Вывод: <strong>в простое система почти ничего не ест</strong> (немного RAM под резидентную модель,
+ноль CPU). Дорого становится только в моменты работы — и эти моменты мы разводим по
+времени (диалог сейчас, тяжёлое ночью).</p>
+<h2>14.3. Счёт по ресурсам</h2>
+<p><strong>По времени (твоего внимания):</strong> после установки — почти ноль. Цель проекта (Sprint
+10) — «поставил и забыл»: сервис-режим с автоперезапуском, самоотчёт в Telegram при
+проблемах. Разово: установка, создание бота, первичная индексация (идёт сама).</p>
+<p><strong>По памяти (RAM):</strong> ~10 ГБ из 16 в рабочем состоянии (ОС + модель + индекс + процесс),
+остальное — тебе. Комфортно, пока не запускаешь тяжёлые программы одновременно с
+большим диалогом. Рычаг: выгружать модель (<code>keep_alive</code> короче) ценой скорости отклика.</p>
+<p><strong>По процессору (CPU):</strong> 0% в простое, 100% на время думания/индексации. Именно поэтому
+диалог и фон сериализованы — чтобы 100% не наложились и не подвесили всё.</p>
+<p><strong>По диску:</strong> прикидка для среднего личного корпуса:</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>Что</th>
+<th>Место</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Модели Ollama (7B + 3B)</td>
+<td>~6–8 ГБ</td>
+</tr>
+<tr>
+<td>Эмбеддер, Whisper</td>
+<td>~1–2 ГБ</td>
+</tr>
+<tr>
+<td>SQLite (память, задачи, история, аудит)</td>
+<td>десятки–сотни МБ</td>
+</tr>
+<tr>
+<td>Qdrant индекс (зависит от корпуса)</td>
+<td>~4 ГБ на 1 млн чанков (dense) + sparse + текст</td>
+</tr>
+<tr>
+<td>Кэш извлечённого текста</td>
+<td>пропорционально корпусу</td>
+</tr>
+<tr>
+<td>Бэкапы (7d+4w)</td>
+<td>кратно размеру data/</td>
+</tr>
+<tr>
+<td><strong>Итого</strong></td>
+<td>единицы–десятки ГБ</td>
+</tr>
+</tbody>
+</table></div>
+<p>У тебя ~113 ГБ свободно — достаточно, но за ростом (OCR-кэш, бэкапы, большой корпус)
+надо следить; retention бэкапов и вычистка логов держат это в узде.</p>
+<p><strong>По электроэнергии:</strong> существенно только в моменты 100% CPU. Ноутбук под полной
+нагрузкой — десятки ватт; в простое — единицы. За месяц активного использования — это
+единицы киловатт-часов, то есть <em>копейки</em>. Практически незаметно в счёте за свет. Важнее
+не деньги, а что под нагрузкой ноутбук греется и шумит вентилятором — заметно при долгой
+индексации (ещё повод делать её ночью).</p>
+<h2>14.4. Сравнение с облаком (чтобы видеть картину)</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>Локальный (наш)</th>
+<th>Облачный (ChatGPT API)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Деньги за запрос</td>
+<td>0</td>
+<td>платишь за токены</td>
+</tr>
+<tr>
+<td>Железо</td>
+<td>твой ноутбук (уже есть)</td>
+<td>чужое</td>
+</tr>
+<tr>
+<td>Приватность</td>
+<td>данные не уходят</td>
+<td>данные у провайдера</td>
+</tr>
+<tr>
+<td>Скорость</td>
+<td>десятки секунд (CPU)</td>
+<td>секунды</td>
+</tr>
+<tr>
+<td>Качество модели</td>
+<td>7B (скромное)</td>
+<td>топовое</td>
+</tr>
+<tr>
+<td>Работает офлайн</td>
+<td>да (кроме TG)</td>
+<td>нет</td>
+</tr>
+<tr>
+<td>Эксплуатация</td>
+<td>твоя забота</td>
+<td>их забота</td>
+</tr>
+</tbody>
+</table></div>
+<p>Наш выбор оплачен принципом Local First: приватность и независимость важнее скорости и
+качества модели. Деньги экономятся, ресурсы ноутбука тратятся.</p>
+<h2>14.5. Плюсы, минусы, решения, поздние вопросы</h2>
+<p><strong>Плюсы:</strong> нет абонентки и оплаты за токены; предсказуемая стоимость (ты уже купил
+ноутбук); почти ноль расхода в простое.</p>
+<p><strong>Минусы (скрытые):</strong> часть RAM всегда занята; под нагрузкой ноутбук греется/шумит/ест
+батарею; растущий корпус ест диск; «бесплатно» не значит «без ресурсов».</p>
+<p><strong>Твои решения:</strong> держать модель резидентно или выгружать (RAM против скорости); где
+хранить бэкапы (внешний диск — безопаснее); retention (глубина истории против места);
+на батарее ли гонять тяжёлое (лучше от сети — индексация сажает аккумулятор).</p>
+<p><strong>Поздние вопросы:</strong> «ноутбук греется по ночам» — это ночные джобы; сдвинь тихие часы
+или убедись, что он на зарядке; «мало места» — почисти OCR-кэш, ужми retention, следи
+за ростом Qdrant; «жрёт батарею» — тяжёлое лучше от сети, <code>keep_alive</code> короче в
+автономе.</p>
+<hr>
+<h1 id="ch-15">Глава 15. FAQ</h1>
+<p>Большой список вопросов, которые задаёт новичок (и ты через полгода). Сгруппированы по
+темам. Многие отвечены подробнее в соответствующих главах — здесь короткие ответы со
+ссылками.</p>
+<h2>Модели и LLM</h2>
+<p><strong>Что будет, если заменить модель?</strong> Меняешь строчку в <code>config/models.yaml</code> (роль →
+новая модель), перезапускаешь. Код не трогается (NFR-9). Нюанс: если менял <em>эмбеддер</em>
+(роль embedding) — нужна переиндексация, потому что старые векторы несовместимы с новой
+моделью (глава 6). Смена <em>чат</em>-модели переиндексации не требует.</p>
+<p><strong>Можно ли иметь несколько моделей одновременно?</strong> Да, у нас уже так: 7B на диалог, 3B
+на фон (роли в конфиге). Но в <em>памяти</em> держится одна за раз (16 ГБ RAM); переключение
+дешёвое. Держать 7B и 3B резидентно вместе — не влезет комфортно.</p>
+<p><strong>Модель выдумывает / врёт про сделанное.</strong> Классика qwen2.5 7B. В проекте встроены
+защиты (маркеры 🔧, чистка выдуманных строк, дедуп, принудительный tool_choice — глава
+3). Проверяй <code>/audit</code>: был ли реальный вызов инструмента. Проектируй новое с недоверием
+к модели.</p>
+<p><strong>Почему первый ответ медленный?</strong> Модель грузится с диска в RAM (~5 ГБ). Дальше, пока
+<code>keep_alive</code> не истёк, быстрее (глава 2, 13).</p>
+<p><strong>Можно ли сделать быстрее?</strong> Короче промпт (главный рычаг), меньше кругов агента,
+эксперимент ipex-llm (Iris Xe), в пределе — GPU/другое железо (глава 13).</p>
+<p><strong>Можно ли потом перейти в облако?</strong> Да. OpenAI-совместимый API означает, что облачную
+модель можно назначить на роль в конфиге (явно, по умолчанию выключено). Архитектура
+это предусматривает (глава 2, ADR-5).</p>
+<h2>Хранение и данные</h2>
+<p><strong>Можно ли хранить всё в SQLite?</strong> Всё <em>структурированное</em> — да, и мы так делаем. Но
+векторный поиск на миллион чанков — не для SQLite; смысловой поиск отдан Qdrant. Сплит
+осознан (глава 6, 11).</p>
+<p><strong>Что будет, если удалить индекс?</strong> Данные (память, задачи, история) целы — они в
+SQLite. Теряется только поиск по документам. Лечится переиндексацией (<code>scripts/reindex.py</code>).
+Оригиналы файлов не затрагиваются (глава 5, 11).</p>
+<p><strong>Что будет при обновлении ОС?</strong> Само по себе — ничего, <code>data/</code> и конфиг на месте.
+Возможные хлопоты: путь к Ollama/сервису, права доступа. Сервис-режим переустановить
+скриптом (<code>scripts/install_service_windows.ps1</code>) при необходимости.</p>
+<p><strong>Как перенести на новый компьютер?</strong> Скопировать <code>data/</code> + <code>config/</code>, поставить код и
+Ollama, скачать модели. Всё состояние переедет (глава 11).</p>
+<p><strong>Данные точно никуда не уходят?</strong> Единственный внешний трафик — Telegram API (твои
+сообщения между твоими устройствами) и явно включённые коннекторы (web-поиск и т.п. —
+по умолчанию выключены, через allowlist хостов). Всё остальное — локально (глава 8,
+требование FR-9.1).</p>
+<p><strong>Нужно ли шифровать диск?</strong> Открытый вопрос Q-7. Если ноутбук уже под BitLocker — весь
+диск зашифрован, базово достаточно. Опция: SQLCipher для SQLite + шифрование бэкапов.
+Твоё решение по риск-профилю (глава 11).</p>
+<h2>Каналы</h2>
+<p><strong>Можно ли отказаться от Telegram?</strong> Да. Есть локальный web-чат и консоль (те же тонкие
+адаптеры к Router). Потеряешь мобильность («пишу откуда угодно»), но всё остальное
+работает. Telegram — единственный внешний канал; убрав его, получишь полностью офлайн-
+систему, доступную только за этим компьютером (глава 8).</p>
+<p><strong>Нужен ли сервер / белый IP для Telegram?</strong> Нет. Long polling: твой ноутбук сам
+опрашивает Telegram исходящими запросами. Никаких входящих соединений (глава 8).</p>
+<p><strong>Ноутбук был выключен — сообщения потерялись?</strong> Нет, Telegram хранит их несколько
+дней; при запуске Gateway заберёт накопленное (глава 8).</p>
+<h2>Память и задачи</h2>
+<p><strong>Ассистент забыл, что я говорил на прошлой неделе.</strong> До Sprint 7 (авто-консолидация)
+между сессиями хранятся <em>факты</em> (если сказал «запомни» или система извлекла), но не
+весь разговор автоматически. Явное «запомни» сохраняется точно (глава 4).</p>
+<p><strong>Он вспомнил устаревшее.</strong> Проверь <code>superseded_by</code> — возможно, старый факт не вытеснен.
+Скажи «забудь X» или поправь; память решений хранит и историю, и актуальное (глава 4).</p>
+<p><strong>Напоминание не сработало.</strong> Ноутбук был включён в тот момент? Если выключен — придёт
+при следующем включении (в пределах misfire_grace) или попадёт в утреннюю сводку.
+Локальный ассистент не напомнит, пока его «мозг» спит (глава 9).</p>
+<p><strong>Пришло дважды.</strong> Не должно (идемпотентность по <code>reminder_log</code>). Если случилось — баг
+фиксации доставки, смотри лог (глава 9).</p>
+<h2>Документы и поиск</h2>
+<p><strong>Загрузил файлы — почему не сразу в поиске?</strong> Очередь + фоновая индексация в паузах;
+на CPU это минуты. «В течение минут» — заложенный критерий (глава 5, 7).</p>
+<p><strong>Переименовал/переместил — всё переиндексируется?</strong> Нет: хэш тот же → правятся только
+пути, векторы остаются. Дёшево (глава 7).</p>
+<p><strong>Поиск находит нерелевантное / не находит точный номер.</strong> Возможно: не тот эмбеддер
+для языка, крупные чанки, нужен гибрид/reranker. Точные номера — это sparse-компонент
+гибридного поиска (глава 6).</p>
+<p><strong>Нашёл старую версию документа.</strong> Проверь, обновился ли индекс после правки (хэш); при
+сомнении — <code>reindex.py</code> (глава 5, 7).</p>
+<h2>Архитектура и разработка</h2>
+<p><strong>Как добавить свой инструмент?</strong> Функция + <code>ToolSpec</code> в <code>tools.py</code> модуля. Ядро и
+каналы не трогаются (глава 10).</p>
+<p><strong>Как добавить новый источник данных / канал?</strong> Источник — экстрактор в
+<code>indexer/extractors/</code> + конфиг. Канал — адаптер в <code>channels/</code>. Ядро не меняется (глава
+10).</p>
+<p><strong>import-linter ругается при сборке.</strong> Ты нарушил границу модуля (импорт в обход
+интерфейса). Это фича, а не баг: смотри, какой импорт лишний, и общайся через интерфейс
+или событие (глава 10).</p>
+<p><strong>Можно ли вынести модуль в отдельный процесс?</strong> Да, заложено: модуль общается только
+через интерфейс, оборачивается в MCP-сервер. На одной машине обычно не нужно, но путь
+роста есть (глава 10).</p>
+<p><strong>Почему не LangChain / микросервисы?</strong> Комбайны — протекающие абстракции + breaking
+changes; микросервисы — вся цена, ноль выгоды на одной машине. Модульный монолит —
+слабая связанность без цены распределённости (глава 10, ADR-1).</p>
+<h2>Эксплуатация</h2>
+<p><strong>Ноутбук греется/шумит по ночам.</strong> Ночные джобы (консолидация, бэкап, скан). Сдвинь
+тихие часы или держи на зарядке (глава 14).</p>
+<p><strong>Мало места на диске.</strong> Почисти OCR-кэш, ужми retention бэкапов, следи за ростом
+Qdrant (глава 14).</p>
+<p><strong>Ollama пишет <code>bind: Only one usage of each socket address</code>.</strong> Не поломка: Ollama уже
+работает сервисом и слушает порт. <code>ollama serve</code> вручную не нужен (глава 2).</p>
+<p><strong>Что если процесс упадёт?</strong> Сервис-режим (NSSM/systemd) с автоперезапуском; очередь
+индексации и задания планировщика переживают рестарт (в SQLite); диалог продолжится
+(глава 9, 13).</p>
+<h2>Файлы, которые я «загружу» ассистенту — что он не сможет прочитать?</h2>
+<p>Раз ты в промпте упоминал ограничения на чтение файлов — важная честная оговорка про
+<em>будущую</em> работу с документами:</p>
+<ul>
+<li><strong>Сканы и фото без OCR</strong> (картинка текста) — до Sprint 8 не читаются как текст.
+  Решение: включить OCR (Sprint 8) или прислать текстовую версию.</li>
+<li><strong>Кривые/защищённые PDF</strong> — текст может извлекаться плохо или никак (пароль, хитрая
+  вёрстка). Решение: OCR-fallback (Sprint 8), либо пересохранить/расшифровать PDF.</li>
+<li><strong>Экзотические форматы</strong> (редкие CAD, проприетарные) — нет экстрактора. Решение:
+  экспорт в PDF/txt/MD.</li>
+<li><strong>Очень большие файлы</strong> — отсекаются порогом. Решение: разбить, или поднять порог в
+  конфиге осознанно.</li>
+<li><strong>Зашифрованные архивы</strong> — не индексируются. Решение: распаковать в whitelisted папку.</li>
+</ul>
+<p>Если ассистент чего-то «не видит» в документе — почти всегда дело в станции извлечения
+текста (глава 5): либо формат без экстрактора, либо картинка без OCR. Диагностика:
+загляни в <code>data/files_cache/</code> — если там пусто для файла, текст не извлёкся.</p>
+<hr>
+<h1 id="ch-16">Глава 16. Глоссарий</h1>
+<p>Словарь терминов проекта простым языком. Отсортирован по алфавиту (латиница, потом
+кириллица). Возвращайся сюда, встретив незнакомое слово.</p>
+<p><strong>Agent (Агент)</strong> — LLM, которой дали инструменты, память и цикл, чтобы она не только
+отвечала, но и <em>действовала</em>. Мозг + руки + записная книжка (глава 1, 3).</p>
+<p><strong>Agent loop (Агентный цикл)</strong> — повторяющийся круг «модель сказала → система сделала →
+модель посмотрела на результат → сказала снова», пока задача не решена. Сердце системы
+(глава 3).</p>
+<p><strong>API</strong> — «розетка»: договорённость о форме запроса/ответа, чтобы программы стыковались
+(глава 2).</p>
+<p><strong>BM25</strong> — классический алгоритм поиска по ключевым словам (не по смыслу). Sparse-
+компонент гибридного поиска; ловит точные слова, номера, коды (глава 6).</p>
+<p><strong>Chunk (Чанк)</strong> — кусок документа (~500–800 токенов), на которые режется файл при
+индексации. Единица поиска (глава 5).</p>
+<p><strong>Chunking (Чанкинг)</strong> — процесс нарезки документа на чанки, желательно структурно (по
+заголовкам, страницам), с перекрытием (глава 5).</p>
+<p><strong>Confidence (Уверенность)</strong> — вес факта в памяти: 1.0 для явно сказанного, 0.6–0.9 для
+извлечённого моделью. Защищает от мусора (глава 4).</p>
+<p><strong>Context / Context window (Контекст)</strong> — «рабочий стол» на один вызов модели: промпт +
+ответ, ограниченный по размеру. <strong>Не</strong> память: стирается после вызова (глава 2, 4).</p>
+<p><strong>Dense vector (Плотный вектор)</strong> — эмбеддинг, кодирующий смысл текста числами. Ищет по
+смыслу (глава 6).</p>
+<p><strong>Embedding (Эмбеддинг)</strong> — список чисел (координат на «карте смыслов»), в который
+превращается текст, чтобы искать по смыслу через расстояние между точками (глава 6).</p>
+<p><strong>Event Bus (Событийная шина)</strong> — «доска объявлений» внутри программы: модули вешают
+события, другие реагируют. Для реакций «после» (глава 10).</p>
+<p><strong>FAISS</strong> — библиотека быстрого поиска соседей-векторов. Только поиск, без CRUD и
+метаданных; отвергнута в пользу Qdrant (глава 6).</p>
+<p><strong>Feature flag (Флаг функции)</strong> — переключатель в конфиге: включить/выключить модуль
+без правки кода (глава 3, 10).</p>
+<p><strong>FTS5</strong> — полнотекстовый поиск в SQLite. Сейчас на нём работает поиск по фактам памяти
+(с префиксным матчингом под русскую морфологию), до переезда на векторы в Sprint 4
+(глава 4).</p>
+<p><strong>Hybrid search (Гибридный поиск)</strong> — dense (смысл) + sparse (слова), слитые через RRF.
+Точнее чистой семантики на ру/en и точных терминах (глава 6).</p>
+<p><strong>HNSW</strong> — алгоритм быстрого приближённого поиска ближайших векторов в Qdrant.
+«Сеть дорог» между векторами (глава 6).</p>
+<p><strong>Indexer (Индексатор)</strong> — модуль, следящий за файлами и держащий индекс актуальным:
+watcher, очередь, извлечение, чанкинг, эмбеддинг, каталог (глава 5, 7).</p>
+<p><strong>Index (Индекс)</strong> — умный «указатель» на твои документы: векторы чанков + метаданные.
+Не копия файлов, а способ быстро искать по ним (глава 5, 6).</p>
+<p><strong>LLM (Large Language Model, большая языковая модель)</strong> — функция «текст → продолжение
+текста», обученная на массиве текстов. Речевой центр ассистента; сама по себе без
+памяти и действий (глава 1, 2).</p>
+<p><strong>Local First</strong> — принцип: всё локально, данные не уходят, входящих соединений нет.
+Определяет половину архитектуры (глава 1, 8).</p>
+<p><strong>Long polling (Длинный опрос)</strong> — способ получать сообщения Telegram исходящими
+запросами (ноутбук сам спрашивает «есть новое?»). Не нужен сервер/белый IP (глава 8).</p>
+<p><strong>MCP (Model Context Protocol)</strong> — «USB для инструментов»: стандарт, чтобы подключать
+готовые серверы инструментов и публиковать свои. Работает в обе стороны (глава 3, 10).</p>
+<p><strong>mtime</strong> — время последнего изменения файла; вместе с хэшем помогает понять, менялся
+ли файл (глава 5, 7).</p>
+<p><strong>Ollama</strong> — рантайм (движок запуска) локальных моделей; твой выбор. Скачивает модели,
+даёт OpenAI-совместимый API, работает сервисом (глава 2).</p>
+<p><strong>OpenAI-совместимый API</strong> — де-факто стандартный формат общения с LLM; на нём говорят
+Ollama, LM Studio и облачные модели. Делает рантайм заменяемым (глава 2).</p>
+<p><strong>Orchestrator (Оркестратор)</strong> — код, крутящий agent loop: вызывает модель, исполняет
+инструменты, следит за лимитами и риском (глава 3, 10).</p>
+<p><strong>Payload</strong> — метаданные, хранимые рядом с вектором в Qdrant (путь, страница, тип,
+дата, проект). По ним фильтруется поиск (глава 6).</p>
+<p><strong>Planner (Планировщик действий)</strong> — шаг, где модель строит план из нескольких пунктов.
+У нас <em>явного</em> нет (вредит слабой 7B); используем пошаговый ReAct (глава 3). Не путать с
+Scheduler.</p>
+<p><strong>Polling</strong> — см. Long polling.</p>
+<p><strong>Prefill</strong> — стадия «прочтения» промпта моделью перед генерацией. На CPU ~15–40 ток/с;
+длинный промпт → долгий prefill (глава 2, 13).</p>
+<p><strong>Qdrant</strong> — векторная база данных; наш выбор. Embedded (файлы) → server (тот же API),
+нативный гибрид, богатые фильтры, named vectors (глава 6).</p>
+<p><strong>RAG (Retrieval-Augmented Generation)</strong> — «генерация с опорой на поиск»: сначала найти
+релевантные куски документов, потом дать их модели, чтобы отвечала по ним, а не
+выдумывала (глава 5, 6).</p>
+<p><strong>ReAct (Reason + Act)</strong> — шаблон «рассуждай и действуй»: модель чередует размышление и
+вызовы инструментов. Наш способ мышления агента (глава 3).</p>
+<p><strong>Reranker (Переранжировщик)</strong> — модель, уточняющая порядок топ-результатов поиска.
+Точнее, но +секунды на CPU; по умолчанию выключен (глава 6).</p>
+<p><strong>Retriever / Retrieval (Извлечение/поиск)</strong> — компонент/процесс поиска релевантного
+(документов в RAG, фактов в памяти) под текущий запрос. Память — это retrieval-задача,
+а не «большой промпт» (глава 4, 6).</p>
+<p><strong>Router (Маршрутизатор)</strong> — «секретарь на входе»: нормализует сообщения из любого
+канала, ведёт сессии, доставляет ответы. Развязывает каналы и мозг (глава 8, 10).</p>
+<p><strong>RRF (Reciprocal Rank Fusion)</strong> — способ слить результаты dense и sparse поиска в один
+рейтинг (глава 6).</p>
+<p><strong>RRULE</strong> — стандартная строка описания повторений («каждый понедельник» →
+<code>FREQ=WEEKLY;BYDAY=MO</code>). LLM переводит фразу в RRULE, код исполняет (глава 9).</p>
+<p><strong>Runtime (Рантайм, движок инференса)</strong> — программа, запускающая модель (Ollama, LM
+Studio, vLLM). У тебя — Ollama (глава 2).</p>
+<p><strong>Scheduler (Планировщик задач по времени)</strong> — «надёжный будильник»: APScheduler +
+SQLite, срабатывает по времени, публикует события. Переживает перезапуск. Не путать с
+Planner (глава 9).</p>
+<p><strong>Sparse vector (Разреженный вектор)</strong> — представление для поиска по ключевым словам
+(BM25). Ловит точные термины (глава 6).</p>
+<p><strong>SQLite</strong> — встраиваемая СУБД (один файл, без сервера) для всего структурированного:
+история, память, задачи, аудит, каталог. Наш выбор для реляционных данных (глава 11).</p>
+<p><strong>structured output (Структурированный вывод)</strong> — ответ модели в строгом формате (JSON
+по схеме) с валидацией и retry. Для парсинга дат, извлечения фактов (глава 3, 9).</p>
+<p><strong>Token (Токен)</strong> — кусочек текста (примерно слово или часть слова), которыми оперирует
+модель. Скорость меряется в токенах/с, длина промпта — в токенах (глава 2).</p>
+<p><strong>Tool (Инструмент)</strong> — функция, которую модель может <em>попросить</em> выполнить (найти файл,
+создать задачу). Модель не исполняет сама — просит систему (глава 3).</p>
+<p><strong>Tool Calling (Вызов инструментов)</strong> — механизм, которым модель вместо текста выдаёт
+структурированный вызов функции (глава 3).</p>
+<p><strong>Tool Registry (Реестр инструментов)</strong> — единый учёт инструментов: регистрация, выдача
+по фильтрам, исполнение с валидацией, аудитом и уровнями риска (глава 3, 10).</p>
+<p><strong>Vector Database (Векторная база)</strong> — хранилище эмбеддингов с быстрым поиском по
+похожести. У нас Qdrant (глава 6).</p>
+<p><strong>Watcher (Наблюдатель)</strong> — компонент, слушающий события файловой системы (создан/изменён/
+удалён) для реакции за секунды. Дополнен периодическим сканом (глава 5, 7).</p>
+<p><strong>Webhook</strong> — способ получать сообщения входящими соединениями (Telegram стучится к
+тебе). Требует белого IP; <strong>не</strong> наш выбор (у нас long polling) (глава 8).</p>
+<p><strong>Whisper (faster-whisper)</strong> — модель распознавания речи (голос → текст), роль <code>stt</code>,
+in-process на CPU (глава 8).</p>
+<p><strong>Аудит (Audit log)</strong> — неизменяемая (append-only) летопись действий: входящие, вызовы
+инструментов, напоминания. Отвечает на «что ты делал вчера?» (глава 10).</p>
+<p><strong>Каталог файлов (files)</strong> — таблица в SQLite (path, hash, mtime, статус) — источник
+истины о том, что и как проиндексировано. Основа инкрементальности (глава 5, 7).</p>
+<p><strong>Консолидация</strong> — «сон» ассистента: ночью сессии → эпизоды → факты; наведение порядка
+в памяти (глава 4).</p>
+<p><strong>Модульный монолит</strong> — один процесс с жёсткими границами модулей. Наш архитектурный
+выбор: слабая связанность без цены микросервисов (глава 10).</p>
+<p><strong>Хэш содержимого</strong> — короткий отпечаток файла: одинаковое содержимое → одинаковый хэш.
+Отличает «переехал» от «изменился», основа дешёвой переиндексации (глава 7).</p>
+<p><strong>Эмбеддер</strong> — модель, превращающая текст в эмбеддинг (e5-small или bge-m3, in-process).
+Отдельная от чат-модели (глава 6).</p>
+<hr>
+<h2 id="conclusion">Заключение: как пользоваться этой книгой дальше</h2>
+<p>Ты дочитал. Теперь у тебя есть цельная карта системы — от «что вообще такое агент» до
+того, сколько ватт ест ночная индексация. Несколько советов, как держать эту книгу
+живой:</p>
+<ol>
+<li><strong>Возвращайся по оглавлению.</strong> Застрял в разработке на RAG — перечитай главы 5–7.
+   Спорите с LLM про память — глава 4. Это справочник, а не роман: читать заново целиком
+   не нужно.</li>
+<li><strong>Дополняй её.</strong> Когда в спринте всплывёт решение, которого тут нет, — допиши абзац в
+   нужную главу. Книга должна расти вместе с системой (для <em>формальных</em> решений заводи
+   ADR в <code>docs/adr/</code>, а сюда — человеческое объяснение «почему»).</li>
+<li><strong>Сверяйся с реальностью.</strong> Эта книга отражает состояние на конец Sprint 3 и планы
+   дальше. Что <em>реально</em> сделано и где отступили от плана — всегда смотри в
+   <code>docs/06-roadmap.md</code> (чек-лист внизу) и в коде. Если книга и код разойдутся — прав
+   код, а книгу поправь.</li>
+<li><strong>Держи в голове три сквозные идеи</strong>, которые повторялись из главы в главу:
+   - <strong>Интеллект отдельно, исполнение отдельно.</strong> LLM понимает и решает; надёжный код
+     делает. Напоминания, файлы, даты — везде так.
+   - <strong>Слабая модель — проектируй с недоверием.</strong> Короткие промпты, валидация, проверка
+     «а вправду ли сделал», защиты от галлюцинаций.
+   - <strong>CPU-железо диктует форму.</strong> Одна модель в памяти, бюджет промпта, фон уступает
+     диалогу, тяжёлое — ночью. Половина решений — отсюда.</li>
+</ol>
+<p>Следующий шаг проекта — Sprint 4 (RAG). Теперь ты понимаешь его целиком: главы 5, 6, 7
+— это ровно то, что в нём предстоит построить. Удачи, и пусть твоя «вторая голова»
+получится такой, как ты задумал.</p>
+    </article>
+  </div>
+</div>
+
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default', securityLevel: 'loose',
+    flowchart: { htmlLabels: true }, fontFamily: 'inherit' });
+</script>
+
+
+<script>
+(function(){
+  // progress bar
+  var bar=document.getElementById('progress');
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    bar.style.width=(max>0?(h.scrollTop/max*100):0)+'%';
+    spy();
+  }
+  // scrollspy
+  var links=[].slice.call(document.querySelectorAll('.nav-link'));
+  var targets=links.map(function(a){var id=a.getAttribute('href').slice(1);
+    return {a:a,el:document.getElementById(id)};}).filter(function(t){return t.el;});
+  function spy(){
+    var y=window.scrollY+130, cur=targets[0];
+    for(var i=0;i<targets.length;i++){ if(targets[i].el.offsetTop<=y) cur=targets[i]; }
+    links.forEach(function(l){l.classList.remove('active');});
+    if(cur){ cur.a.classList.add('active');
+      // keep active item visible in sidebar
+      var sb=document.querySelector('.sidebar');
+      if(sb && !isMobile()){ var r=cur.a.getBoundingClientRect(), sr=sb.getBoundingClientRect();
+        if(r.top<sr.top+50||r.bottom>sr.bottom-20) cur.a.scrollIntoView({block:'center'}); }
+    }
+  }
+  function isMobile(){return window.matchMedia('(max-width:900px)').matches;}
+  window.addEventListener('scroll',onScroll,{passive:true});
+  window.addEventListener('resize',onScroll);
+
+  // mobile drawer
+  var sb=document.querySelector('.sidebar'), scrim=document.querySelector('.scrim'),
+      burger=document.querySelector('.burger');
+  function openNav(){sb.classList.add('open');scrim.classList.add('show');}
+  function closeNav(){sb.classList.remove('open');scrim.classList.remove('show');}
+  if(burger){burger.addEventListener('click',openNav);}
+  if(scrim){scrim.addEventListener('click',closeNav);}
+  links.forEach(function(l){l.addEventListener('click',function(){if(isMobile())closeNav();});});
+
+  // theme toggle (syncs with host data-theme)
+  var tbtn=document.getElementById('themeBtn');
+  function current(){
+    var r=document.documentElement;
+    if(r.dataset.theme) return r.dataset.theme;
+    return window.matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+  }
+  function label(){ if(!tbtn)return; var d=current()==='dark';
+    tbtn.innerHTML=(d?'☀':'☾')+' <span>'+(d?'Светлая':'Тёмная')+'</span>'; }
+  if(tbtn){ tbtn.addEventListener('click',function(){
+    document.documentElement.dataset.theme=(current()==='dark'?'light':'dark'); label();});
+    label(); }
+  window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change',label);
+
+  onScroll();
+})();
+</script>
+
+</body>
+</html>
