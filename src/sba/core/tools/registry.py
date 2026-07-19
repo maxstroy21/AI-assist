@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Collection
 
 import structlog
 from pydantic import ValidationError
@@ -43,8 +44,14 @@ class ToolRegistry:
     def available(self) -> list[ToolSpec]:
         return list(self._tools.values())
 
-    def openai_schemas(self) -> list[ToolSchema]:
-        return [spec.to_openai() for spec in self._tools.values()]
+    def openai_schemas(self, modules: Collection[str] | None = None) -> list[ToolSchema]:
+        """Схемы инструментов для модели. modules — ограничить набор модулями
+        (topic-scoped, ускоряет промпт); None — все зарегистрированные."""
+        return [
+            spec.to_openai()
+            for spec in self._tools.values()
+            if modules is None or spec.module in modules
+        ]
 
     def get(self, name: str) -> ToolSpec | None:
         return self._tools.get(name)

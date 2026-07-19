@@ -71,6 +71,10 @@ class AgentConfig(_Strict):
     history_max_messages: int = 16
     history_budget_chars: int = 4000
     max_tool_iterations: int = 5
+    # true — слать модели только инструменты по теме сообщения (файлы/задачи/
+    # память), а не все сразу. Короче промпт → быстрее ответ на CPU и меньше
+    # путаницы у слабой модели. На общие реплики («привет») инструменты не идут
+    topic_scoped_tools: bool = False
 
 
 class FilesConfig(_Strict):

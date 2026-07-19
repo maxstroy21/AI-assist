@@ -87,11 +87,16 @@ TASK_NUDGE = (
     "найденному, НЕ создавай новое. ПРОСЬБА о будущем напоминании («напомни "
     "завтра…», «напоминай каждое утро…») — вызови create_reminder."
 )
-TOPIC_NUDGES: tuple[tuple[tuple[str, ...], str], ...] = (
-    (FILE_TOPIC_MARKERS, FILE_NUDGE),
-    (MEMORY_TOPIC_MARKERS, MEMORY_NUDGE),
-    (TASK_TOPIC_MARKERS, TASK_NUDGE),
+# Каждая тема несёт и подсказку, и набор модулей-инструментов: при
+# topic_scoped_tools модели уходят только релевантные теме инструменты
+# (короче промпт → быстрее ответ на CPU, меньше путаницы у слабой модели).
+TOPIC_RULES: tuple[tuple[tuple[str, ...], str, frozenset[str]], ...] = (
+    (FILE_TOPIC_MARKERS, FILE_NUDGE, frozenset({"files", "rag"})),
+    (MEMORY_TOPIC_MARKERS, MEMORY_NUDGE, frozenset({"memory"})),
+    (TASK_TOPIC_MARKERS, TASK_NUDGE, frozenset({"tasks", "reminders"})),
 )
+# get_current_time дёшев и полезен для расчёта дат — доступен всегда
+ALWAYS_MODULES = frozenset({"basic"})
 
 # Ollama игнорирует tool_choice=required (проверено вживую: модель отвечает
 # текстом «из головы» на прямой вопрос о файлах). Принуждение выполняем сами:
@@ -191,13 +196,19 @@ class AgentOrchestrator:
             log.info("destructive_dropped", tool=pending.call.name)
 
         lowered = msg.text.lower()
-        nudges = [
-            text
-            for markers, text in TOPIC_NUDGES
-            if any(marker in lowered for marker in markers)
-        ]
+        nudges: list[str] = []
+        allowed_modules: set[str] = set(ALWAYS_MODULES)
+        for markers, nudge, modules in TOPIC_RULES:
+            if any(marker in lowered for marker in markers):
+                nudges.append(nudge)
+                allowed_modules |= modules
         messages = await self._build_context(msg, session, nudges=nudges)
-        return self._agent_stream(messages, key, force_first_tool=bool(nudges))
+        # scope=None → все инструменты (по умолчанию); при topic_scoped_tools
+        # шлём только релевантные теме (на общую реплику без темы — только basic)
+        scope = allowed_modules if self._config.topic_scoped_tools else None
+        return self._agent_stream(
+            messages, key, allowed_modules=scope, force_first_tool=bool(nudges)
+        )
 
     # ── служебные команды (мимо LLM, детерминированно) ───────────────────────
 
@@ -275,8 +286,9 @@ class AgentOrchestrator:
         key: tuple[str, str],
         force_first_tool: bool = False,
         tool_already_executed: bool = False,
+        allowed_modules: set[str] | None = None,
     ) -> AsyncIterator[str]:
-        tools = self._registry.openai_schemas()
+        tools = self._registry.openai_schemas(allowed_modules)
         shown_any = False
         executed: dict[tuple[str, str], str] = {}  # дедуп повторных одинаковых вызовов
         # принуждение к инструменту: держится, пока не случится реальный вызов

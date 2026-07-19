@@ -285,6 +285,47 @@ async def test_tool_round_then_final_answer(db: Database) -> None:
     assert tool_msgs[0].tool_call_id == "c1"
 
 
+def _module_tool(name: str, module: str) -> ToolSpec:
+    async def handler(args: BaseModel) -> str:
+        return f"{name}:ok"
+
+    return ToolSpec(
+        name=name, description=f"{name} инструмент", args_schema=ProbeArgs,
+        risk=RiskLevel.READ, module=module, handler=handler,
+    )
+
+
+async def test_topic_scoped_tools_sends_only_relevant_modules(db: Database) -> None:
+    """topic_scoped_tools: на файловый вопрос модель видит файловые инструменты,
+    но не задачные — короче промпт, меньше путаницы."""
+    llm = FakeLLM(replies=["ответ по файлам"])
+    tools = [_module_tool("list_files", "files"), _module_tool("create_task", "tasks")]
+    orch = make_orchestrator(llm, db, tools=tools, topic_scoped_tools=True)
+    await collect(orch, "покажи файлы в загрузках")
+    sent = {t["function"]["name"] for t in (llm.seen_tools[0] or [])}
+    assert "list_files" in sent
+    assert "create_task" not in sent
+
+
+async def test_topic_scoped_general_message_gets_no_tools(db: Database) -> None:
+    """На общую реплику без темы инструменты не идут вовсе — самый лёгкий промпт."""
+    llm = FakeLLM(replies=["привет!"])
+    tools = [_module_tool("list_files", "files"), _module_tool("create_task", "tasks")]
+    orch = make_orchestrator(llm, db, tools=tools, topic_scoped_tools=True)
+    await collect(orch, "привет, как настроение")
+    assert not (llm.seen_tools[0] or [])
+
+
+async def test_tools_unscoped_by_default(db: Database) -> None:
+    """Без флага поведение прежнее: модель видит все инструменты всегда."""
+    llm = FakeLLM(replies=["ответ"])
+    tools = [_module_tool("list_files", "files"), _module_tool("create_task", "tasks")]
+    orch = make_orchestrator(llm, db, tools=tools)  # topic_scoped_tools=False по умолчанию
+    await collect(orch, "покажи файлы в загрузках")
+    sent = {t["function"]["name"] for t in (llm.seen_tools[0] or [])}
+    assert {"list_files", "create_task"} <= sent
+
+
 async def test_unknown_tool_error_fed_back_to_model(db: Database) -> None:
     llm = FakeLLM(
         replies=[[ToolCall(id="c1", name="ghost", arguments={})], "понял, инструмента нет"]
