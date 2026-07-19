@@ -440,3 +440,19 @@ async def test_answer_after_real_tool_call_has_no_warning(db: Database) -> None:
         make_orchestrator(llm, db, tools=[probe_spec([])]), "найди файл отчёт"
     )
     assert "/audit" not in text  # вызов был настоящим — растяжка молчит
+
+
+async def test_info_question_triggers_file_nudge(db: Database) -> None:
+    """«есть ли инфа про…» — вопрос о содержимом: нудж и принуждение включаются."""
+    llm = FakeLLM(
+        replies=[[ToolCall(id="c1", name="probe", arguments={"value": "x"})], "готово"]
+    )
+    await collect(
+        make_orchestrator(llm, db, tools=[probe_spec([])]),
+        "есть ли инфа про абразивную губку?",
+    )
+    assert llm.seen_tool_choice[0] == "required"
+    _, messages = llm.calls[0]
+    assert any(
+        m.role == "system" and "search_documents" in m.content for m in messages
+    )
