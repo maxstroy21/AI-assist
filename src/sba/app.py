@@ -10,6 +10,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import structlog
 
@@ -40,15 +41,22 @@ from sba.modules.memory.tools import build_memory_tools
 from sba.modules.rag.service import RAGService
 from sba.modules.rag.store import ChunkStore
 from sba.modules.rag.tools import build_rag_tools
+from sba.modules.tasks.dates import WhenParser
+from sba.modules.tasks.service import TasksService
+from sba.modules.tasks.store import TaskStore
+from sba.modules.tasks.tools import build_task_tools
 
 log = structlog.get_logger(__name__)
 
 
 async def keep_warm_loop(gateway: ModelGateway, interval_seconds: float) -> None:
-    """Фоновый прогрев: не даёт Ollama выгрузить chat-модель из RAM."""
+    """Фоновый прогрев: не даёт Ollama выгрузить chat-модель из RAM.
+
+    Пауза идёт первой: стартовый прогрев уже выполнен в App.run() до приёма
+    сообщений, повторять его сразу незачем."""
     while True:
-        await gateway.warmup()
         await asyncio.sleep(interval_seconds)
+        await gateway.warmup()
 
 
 class App:
@@ -108,6 +116,30 @@ class App:
                     registry.register(spec)
                 app.indexer = IndexerService(CatalogStore(app.db), rag_service, rag_cfg)
 
+            tasks: TasksService | None = None
+            tasks_cfg = config.modules.tasks
+            if tasks_cfg.enabled:
+                if not app.gateway.has_role("extraction"):
+                    log.warning(
+                        "tasks_no_extraction_role",
+                        hint="добавьте роль extraction в config/models.yaml — "
+                        "сложные формулировки сроков разбираться не будут",
+                    )
+                parser = WhenParser(
+                    app.gateway if app.gateway.has_role("extraction") else None,
+                    ZoneInfo(config.app.timezone),
+                    default_hour=tasks_cfg.default_hour,
+                    clarify_confidence=tasks_cfg.clarify_confidence,
+                )
+                tasks = TasksService(
+                    TaskStore(app.db),
+                    parser,
+                    ZoneInfo(config.app.timezone),
+                    list_limit=tasks_cfg.list_limit,
+                )
+                for spec in build_task_tools(tasks):
+                    registry.register(spec)
+
             memory: MemoryService | None = None
             if config.modules.memory.enabled:
                 # векторный recall памяти включается вместе с RAG (общий Qdrant
@@ -126,7 +158,7 @@ class App:
                 config=config.agent,
                 timezone=config.app.timezone,
                 memory=memory,
-                extra_commands=app._build_extra_commands(rag_service),
+                extra_commands=app._build_extra_commands(rag_service, tasks),
             )
 
             if app.indexer is not None:
@@ -166,10 +198,12 @@ class App:
         return app
 
     def _build_extra_commands(
-        self, rag_service: RAGService | None
+        self, rag_service: RAGService | None, tasks: TasksService | None
     ) -> dict[str, tuple[str, Callable[[], Awaitable[str]]]]:
         """Сервис-команды модулей для оркестратора (инъекция: ядро не знает модулей)."""
         commands: dict[str, tuple[str, Callable[[], Awaitable[str]]]] = {}
+        if tasks is not None:
+            commands["/tasks"] = ("открытые задачи по срокам", tasks.overview_text)
         if self.indexer is not None and rag_service is not None:
             indexer, rag = self.indexer, rag_service
 
@@ -189,6 +223,17 @@ class App:
             return
         background: list[asyncio.Task[None]] = []
         if self.gateway is not None and self.config.llm.keep_warm_minutes > 0:
+            # прогрев ДО приёма сообщений и ДО старта индексатора: первый вопрос
+            # после запуска не ждёт холодную загрузку модели и не ловит ReadTimeout
+            # (загрузка на CPU — минуты; в это время бот сознательно молчит)
+            log.info("model_warming_up")
+            # заметная строка для владельца: среди технических строк лога легко
+            # пропустить момент готовности, а до него бот молчит
+            print("⏳ Загружаю модель в память, подождите (обычно меньше минуты)…",
+                  flush=True)
+            await self.gateway.warmup()
+            print("✅ Модель загружена, можно писать.", flush=True)
+            log.info("model_ready")
             background.append(
                 asyncio.create_task(
                     keep_warm_loop(self.gateway, self.config.llm.keep_warm_minutes * 60)

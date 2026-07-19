@@ -99,6 +99,26 @@ MIGRATIONS: list[str] = [
 
     CREATE VIRTUAL TABLE rag_chunks_fts USING fts5(text, chunk_id UNINDEXED);
     """,
+    """
+    CREATE TABLE tasks (
+        id                TEXT PRIMARY KEY,
+        user_id           TEXT NOT NULL,
+        title             TEXT NOT NULL,
+        notes             TEXT NOT NULL DEFAULT '',
+        project           TEXT,            -- имя проекта в свободной форме
+        status            TEXT NOT NULL,   -- open | done | cancelled
+        due               TEXT,            -- ISO с часовым поясом владельца
+        rrule             TEXT,            -- повторение, RFC 5545: FREQ=WEEKLY;BYDAY=MO
+        source_message_id TEXT,            -- связь задача ↔ исходное сообщение
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL,
+        completed_at      TEXT             -- последнее выполнение (у повторяющихся)
+    );
+    CREATE INDEX idx_tasks_status ON tasks (user_id, status);
+    CREATE INDEX idx_tasks_project ON tasks (user_id, project);
+
+    CREATE VIRTUAL TABLE tasks_fts USING fts5(title, notes, project, task_id UNINDEXED);
+    """,
 ]
 
 

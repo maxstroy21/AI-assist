@@ -19,6 +19,7 @@ dependencies = [
     "qdrant-client>=1.9",  # векторное хранилище, embedded-режим (ADR-3)
     "pypdf>=4.2",  # извлечение текста из PDF (чистый Python; OCR — Sprint 8)
     "python-docx>=1.1",  # извлечение текста из DOCX
+    "python-dateutil>=2.9",  # RRULE: валидация и вычисление следующего срабатывания
 ]
 
 [project.optional-dependencies]
@@ -29,6 +30,7 @@ dev = [
     "mypy>=1.10",
     "import-linter>=2.0",
     "types-PyYAML",
+    "types-python-dateutil",
 ]
 
 [project.scripts]

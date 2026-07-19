@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 import structlog
 
+from sba.core import execctx
 from sba.core.agent.context import build_messages
 from sba.core.agent.language import strip_cjk
 from sba.core.history import HistoryReader
@@ -66,9 +67,28 @@ MEMORY_NUDGE = (
     "forget_memory — чтобы забыть. Не отвечай, что не умеешь запоминать, "
     "и не утверждай, что запомнил, без успешного вызова инструмента."
 )
+TASK_TOPIC_MARKERS = (
+    "задач", "туду", "todo", "дедлайн", "отметь", "выполнен", "сделано",
+    "по проекту", "напом", "не забыть", "не забудь", "не забывай",
+    "запланируй", "ежеднев", "еженедель", "ежемесяч", "кажд", "по утрам",
+)
+TASK_NUDGE = (
+    "Сообщение касается задач. Создавать задачи ты УМЕЕШЬ — не говори, что это "
+    "недоступно. ОБЯЗАТЕЛЬНО используй инструменты задач: create_task — создать "
+    "(срок и повторение передай словами в when), search_tasks — найти или "
+    "показать список (в т.ч. «что у меня по проекту»), complete_task — отметить "
+    "сделанной, update_task — изменить или отменить. Не сообщай, что создал или "
+    "закрыл задачу, без успешного вызова инструмента. Различай: ВОПРОС о задаче "
+    "(«напомни/подскажи, когда/во сколько…», «что у меня…») — это поиск, вызови "
+    "search_tasks и ответь по найденному, НЕ создавай новую. ПРОСЬБА завести дело "
+    "на будущее («напоминай каждое утро…», «поставь задачу…») — вызови create_task "
+    "и честно предупреди, что сам в срок не уведомишь и внешнее действие "
+    "(письмо, звонок) не выполнишь (это появится позже)."
+)
 TOPIC_NUDGES: tuple[tuple[tuple[str, ...], str], ...] = (
     (FILE_TOPIC_MARKERS, FILE_NUDGE),
     (MEMORY_TOPIC_MARKERS, MEMORY_NUDGE),
+    (TASK_TOPIC_MARKERS, TASK_NUDGE),
 )
 
 # Ollama игнорирует tool_choice=required (проверено вживую: модель отвечает
@@ -80,8 +100,9 @@ FORCE_RETRY_NUDGE = (
 )
 FORCED_REFUSAL = (
     "⚠️ Модель дважды попыталась ответить без проверки инструментом — такой "
-    "ответ может быть выдуман, поэтому я его не показываю. Переформулируйте "
-    "вопрос (например: «найди в документах …») или начните новый разговор: /new."
+    "ответ может быть выдуман, поэтому я его не показываю. Повторите запрос чуть "
+    "конкретнее (что именно найти, создать или отметить) или начните новый "
+    "разговор: /new."
 )
 # Растяжка на фабрикацию вне принудительных тем: в ответе упомянуты пути или
 # файлы, хотя за весь ход не было ни одного реального вызова инструмента
@@ -89,6 +110,17 @@ PATH_MENTION_RE = re.compile(r"[A-Za-z]:\\|\.(docx|xlsx|pdf|txt|md|log)\b")
 UNVERIFIED_PATH_WARNING = (
     "\n⚠️ В этом ответе инструменты не вызывались — упомянутые файлы могут "
     "быть выдуманы. Проверить реальные действия: /audit."
+)
+# Та же защита для задач: модель без вызова инструмента заявляет «создана/закрыта
+# задача №…» и выдаёт пример id из промпта за настоящий (подтверждено: /tasks пуст)
+TASK_CLAIM_RE = re.compile(
+    r"(созда|закры|удал|отмен|отмеч|выполн|перенёс|перенес|обнов)\w*\s+задач|"
+    r"задач\w*\s*(созда|закры|удал|отмен|отмеч|выполн|№|#)",
+    re.IGNORECASE,
+)
+UNVERIFIED_TASK_WARNING = (
+    "\n⚠️ Ни один инструмент задач не вызывался — задача НЕ создана и не "
+    "изменена, а номер мог быть выдуман. Проверьте список: /tasks."
 )
 
 
@@ -135,6 +167,8 @@ class AgentOrchestrator:
         self._extra_commands = extra_commands or {}
 
     async def process(self, msg: IncomingMessage, session: Session) -> Reply:
+        # привязка инструментов к источнику (задача ↔ сообщение, Sprint 5)
+        execctx.current_message_id.set(msg.id)
         service_reply = await self._service_command(msg.text)
         if service_reply is not None:
             return service_reply
@@ -294,6 +328,10 @@ class AgentOrchestrator:
                                 if raw_text
                                 else "(модель вернула пустой ответ)"
                             )
+                        elif not any_tool_executed and TASK_CLAIM_RE.search(joined):
+                            # ответ заявляет действие над задачей без вызова инструмента
+                            log.warning("task_claim_without_tools")
+                            yield UNVERIFIED_TASK_WARNING
                         elif not any_tool_executed and PATH_MENTION_RE.search(joined):
                             # ответ называет файлы, хотя инструменты не вызывались
                             log.warning("path_mention_without_tools")
