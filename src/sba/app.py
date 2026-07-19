@@ -55,6 +55,12 @@ from sba.modules.tasks.tools import build_task_tools
 
 log = structlog.get_logger(__name__)
 
+# сколько раз пытаться прогреть модель на старте: холодная загрузка на CPU
+# может не уложиться в один таймаут чтения, но Ollama догрузит модель в фоне,
+# и вторая попытка обычно застаёт её уже в памяти. Больше двух не ждём —
+# иначе старт растянется на десятки минут, а это сигнал сменить модель на лёгкую
+WARMUP_ATTEMPTS = 2
+
 
 async def keep_warm_loop(gateway: ModelGateway, interval_seconds: float) -> None:
     """Фоновый прогрев: не даёт Ollama выгрузить chat-модель из RAM.
@@ -313,9 +319,30 @@ class App:
             # пропустить момент готовности, а до него бот молчит
             print("⏳ Загружаю модель в память, подождите (обычно меньше минуты)…",
                   flush=True)
-            await self.gateway.warmup()
-            print("✅ Модель загружена, можно писать.", flush=True)
-            log.info("model_ready")
+            # холодная загрузка тяжёлой модели на слабом CPU может превысить таймаут
+            # чтения одного запроса — пробуем несколько раз: Ollama продолжает грузить
+            # модель в фоне даже после таймаута, поэтому следующая попытка обычно
+            # застаёт её уже в памяти
+            ready = False
+            for attempt in range(WARMUP_ATTEMPTS):
+                if await self.gateway.warmup():
+                    ready = True
+                    break
+                if attempt < WARMUP_ATTEMPTS - 1:
+                    print("   …модель ещё грузится, продолжаю ждать…", flush=True)
+            if ready:
+                print("✅ Модель загружена, можно писать.", flush=True)
+                log.info("model_ready")
+            else:
+                # честно: не рапортуем «готово», если модель не поднялась —
+                # иначе первый ответ молча падает по таймауту (урок владельца)
+                print(
+                    "⚠️ Модель пока не загрузилась — на этой машине загрузка идёт "
+                    "долго. Можно писать: первый ответ может занять пару минут, а "
+                    "если увидите ошибку таймаута — просто повторите сообщение.",
+                    flush=True,
+                )
+                log.warning("model_not_ready_after_warmup")
             background.append(
                 asyncio.create_task(
                     keep_warm_loop(self.gateway, self.config.llm.keep_warm_minutes * 60)
