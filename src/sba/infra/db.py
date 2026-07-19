@@ -160,6 +160,31 @@ MIGRATIONS: list[str] = [
         UNIQUE (reminder_id, scheduled_for)     -- идемпотентность после сбоя
     );
     """,
+    """
+    ALTER TABLE memory_facts ADD COLUMN project TEXT;  -- память проектов = фильтр
+
+    CREATE TABLE episodes (
+        id              TEXT PRIMARY KEY,
+        user_id         TEXT NOT NULL,
+        conversation_id TEXT NOT NULL UNIQUE,  -- один эпизод на разговор
+        summary         TEXT NOT NULL,         -- о чём говорили, 2-4 предложения
+        topics          TEXT NOT NULL DEFAULT '',  -- темы через запятую
+        project         TEXT,
+        started_at      TEXT NOT NULL,
+        closed_at       TEXT NOT NULL,
+        created_at      TEXT NOT NULL
+    );
+    CREATE INDEX idx_episodes_user ON episodes (user_id, closed_at);
+    CREATE VIRTUAL TABLE episodes_fts USING fts5(summary, topics, episode_id UNINDEXED);
+
+    CREATE TABLE memory_consolidations (
+        conversation_id TEXT PRIMARY KEY,   -- идемпотентность: разговор — один раз
+        processed_at    TEXT NOT NULL,
+        result          TEXT NOT NULL,      -- episode | skipped_short | failed
+        attempts        INTEGER NOT NULL DEFAULT 1,
+        facts_added     INTEGER NOT NULL DEFAULT 0
+    );
+    """,
 ]
 
 

@@ -18,7 +18,7 @@ from sba import __version__
 from sba.channels.cli.repl import CliChannel
 from sba.channels.telegram.gateway import TelegramChannel
 from sba.core.agent.orchestrator import AgentOrchestrator
-from sba.core.events import EventBus, MessageReceived
+from sba.core.events import EventBus, MessageReceived, SessionClosed
 from sba.core.history import HistoryStore
 from sba.core.processor import EchoProcessor
 from sba.core.router import Router
@@ -35,6 +35,8 @@ from sba.modules.basic.tools import build_tools as build_basic_tools
 from sba.modules.files.tools import FilesToolset
 from sba.modules.indexer.service import IndexerService
 from sba.modules.indexer.store import CatalogStore
+from sba.modules.memory.consolidation import MemoryConsolidator
+from sba.modules.memory.episodes import EpisodeStore
 from sba.modules.memory.service import MemoryService
 from sba.modules.memory.store import MemoryStore
 from sba.modules.memory.tools import build_memory_tools
@@ -84,6 +86,7 @@ class App:
         self.scheduler: SchedulerService | None = None
         self.reminders: ReminderService | None = None
         self.brief: MorningBrief | None = None
+        self.consolidator: MemoryConsolidator | None = None
         self.channels: list[ChannelAdapter] = []
 
     @classmethod
@@ -208,20 +211,43 @@ class App:
                     app.bus.subscribe(JobFired, app.brief.on_job_fired)
 
             memory: MemoryService | None = None
-            if config.modules.memory.enabled:
+            memory_cfg = config.modules.memory
+            if memory_cfg.enabled:
                 # векторный recall памяти включается вместе с RAG (общий Qdrant
                 # и эмбеддер); без него память работает на FTS, как в Sprint 3.
                 # semantic=false снимает эмбеддинг-модель с горячего пути ради
                 # экономии RAM (см. modules.memory.semantic в config)
-                mem_vectors = app.vectors if config.modules.memory.semantic else None
-                mem_embedder = app.gateway if config.modules.memory.semantic else None
-                memory = MemoryService(
-                    MemoryStore(app.db, vectors=mem_vectors, embedder=mem_embedder)
-                )
-                if not config.modules.memory.semantic:
+                mem_vectors = app.vectors if memory_cfg.semantic else None
+                mem_embedder = app.gateway if memory_cfg.semantic else None
+                memory_store = MemoryStore(app.db, vectors=mem_vectors, embedder=mem_embedder)
+                episode_store = EpisodeStore(app.db)
+                memory = MemoryService(memory_store, episodes=episode_store)
+                if not memory_cfg.semantic:
                     log.info("memory_semantic_disabled", reason="config: FTS-only recall")
                 for spec in build_memory_tools(memory):
                     registry.register(spec)
+
+                # автопамять (Sprint 7): закрытые разговоры → эпизод → факты,
+                # фоново и только в паузах диалога (CPU не конкурирует с ответами)
+                if memory_cfg.auto_extract:
+                    if app.gateway.has_role("extraction") and app.gateway.has_role(
+                        "summarize"
+                    ):
+                        app.consolidator = MemoryConsolidator(
+                            app.db, memory_store, episode_store, app.gateway, memory_cfg
+                        )
+                        consolidator = app.consolidator
+                        app.bus.subscribe(SessionClosed, consolidator.on_session_closed)
+
+                        async def on_dialog_activity(event: MessageReceived) -> None:
+                            consolidator.notice_activity()
+
+                        app.bus.subscribe(MessageReceived, on_dialog_activity)
+                    else:
+                        log.warning(
+                            "memory_auto_extract_disabled",
+                            hint="нужны роли extraction и summarize в config/models.yaml",
+                        )
 
             processor = AgentOrchestrator(
                 gateway=app.gateway,
@@ -231,7 +257,7 @@ class App:
                 config=config.agent,
                 timezone=config.app.timezone,
                 memory=memory,
-                extra_commands=app._build_extra_commands(rag_service, tasks),
+                extra_commands=app._build_extra_commands(rag_service, tasks, memory),
             )
 
             if app.indexer is not None:
@@ -284,7 +310,10 @@ class App:
         return targets
 
     def _build_extra_commands(
-        self, rag_service: RAGService | None, tasks: TasksService | None
+        self,
+        rag_service: RAGService | None,
+        tasks: TasksService | None,
+        memory: MemoryService | None = None,
     ) -> dict[str, tuple[str, Callable[[], Awaitable[str]]]]:
         """Сервис-команды модулей для оркестратора (инъекция: ядро не знает модулей)."""
         commands: dict[str, tuple[str, Callable[[], Awaitable[str]]]] = {}
@@ -292,6 +321,9 @@ class App:
             commands["/tasks"] = ("открытые задачи по срокам", tasks.overview_text)
         if self.reminders is not None:
             commands["/reminders"] = ("предстоящие напоминания", self.reminders.overview_text)
+        if memory is not None:
+            # ручная ревизия автопамяти (риск Sprint 7): видно, что запомнилось
+            commands["/memory"] = ("что запомнено за неделю", memory.review_text)
         if self.indexer is not None and rag_service is not None:
             indexer, rag = self.indexer, rag_service
 
@@ -350,6 +382,8 @@ class App:
             )
         if self.indexer is not None:
             background.append(asyncio.create_task(self.indexer.run_forever()))
+        if self.consolidator is not None:
+            background.append(asyncio.create_task(self.consolidator.run_forever()))
         if self.scheduler is not None:
             # порядок важен: сначала регистрация сводки и синхронизация задач,
             # потом цикл — иначе перерегистрация может затереть созревший джоб

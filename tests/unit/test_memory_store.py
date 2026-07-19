@@ -87,3 +87,48 @@ async def test_empty_query_returns_recent(store: MemoryStore) -> None:
     await store.add("owner", "fact", "второе", "два")
     found = await store.search("owner", "что ты помнишь?")
     assert len(found) == 2
+
+
+# ── Sprint 7: решения, проекты, история ──────────────────────────────────────
+
+
+async def test_decision_superseded_by_same_subject(store: MemoryStore) -> None:
+    await store.add("owner", "decision", "выбор подрядчика", "работаем с ООО Ромашка")
+    await store.add("owner", "decision", "выбор подрядчика", "передумали: ИП Иванов")
+    active = await store.search("owner", "решение по подрядчику")
+    assert len(active) == 1
+    assert "Иванов" in active[0].content
+
+
+async def test_history_returns_superseded_chain(store: MemoryStore) -> None:
+    first = await store.add("owner", "decision", "маршрут", "идём через перевал")
+    second = await store.add("owner", "decision", "маршрут", "решили в обход")
+    third = await store.add("owner", "decision", "маршрут", "вернулись к перевалу")
+    chain = await store.history(third.id)
+    assert [f.id for f in chain] == [second.id, first.id]
+
+
+async def test_plain_facts_same_subject_accumulate(store: MemoryStore) -> None:
+    await store.add("owner", "person", "Иван Петров", "подрядчик по смете")
+    await store.add("owner", "person", "Иван Петров", "живёт в Твери")
+    found = await store.search("owner", "Иван Петров", k=10)
+    assert len(found) == 2  # факты о человеке копятся, не вытесняются
+
+
+async def test_search_filters_by_project(store: MemoryStore) -> None:
+    await store.add(
+        "owner", "fact", "снаряжение", "нужна новая палатка", project="Экспедиция"
+    )
+    await store.add("owner", "fact", "снаряжение", "старый рюкзак порвался")
+    all_facts = await store.search("owner", "снаряжение", k=10)
+    assert len(all_facts) == 2
+    scoped = await store.search("owner", "снаряжение", k=10, project="экспедиция")
+    assert len(scoped) == 1
+    assert scoped[0].project == "Экспедиция"
+
+
+async def test_recent_lists_fresh_facts_with_source(store: MemoryStore) -> None:
+    await store.add("owner", "fact", "тема", "содержимое", source="auto:abc12345")
+    recent = await store.recent("owner", days=7)
+    assert len(recent) == 1
+    assert recent[0].source == "auto:abc12345"

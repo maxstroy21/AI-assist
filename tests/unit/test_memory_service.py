@@ -4,6 +4,7 @@ import pytest
 from pydantic import BaseModel
 
 from sba.infra.db import Database
+from sba.modules.memory.episodes import EpisodeStore
 from sba.modules.memory.service import MemoryService
 from sba.modules.memory.store import MemoryStore
 from sba.modules.memory.tools import (
@@ -15,10 +16,15 @@ from sba.modules.memory.tools import (
 
 
 @pytest.fixture
-async def service(tmp_path: Path) -> MemoryService:
-    db = await Database.open(tmp_path / "test.db")
-    yield MemoryService(MemoryStore(db))
-    await db.close()
+async def db(tmp_path: Path) -> Database:
+    database = await Database.open(tmp_path / "test.db")
+    yield database
+    await database.close()
+
+
+@pytest.fixture
+def service(db: Database) -> MemoryService:
+    return MemoryService(MemoryStore(db), episodes=EpisodeStore(db))
 
 
 def get_handler(service: MemoryService, name: str):
@@ -67,6 +73,49 @@ async def test_forget_nothing_found_message(service: MemoryService) -> None:
     forget = get_handler(service, "forget_memory")
     result = await forget(ForgetArgs(query="несуществующая тема"))
     assert "нечего забывать" in result
+
+
+# ── Sprint 7: агрегированный recall и ревизия ────────────────────────────────
+
+
+async def test_recall_aggregates_facts_history_and_episodes(
+    db: Database, service: MemoryService
+) -> None:
+    await service.remember("decision", "выбор подрядчика", "работаем с ООО Ромашка")
+    await service.remember("decision", "выбор подрядчика", "передумали: ИП Иванов")
+    await EpisodeStore(db).add(
+        "owner", "conv1", "Обсуждали выбор подрядчика для экспедиции.",
+        ["подрядчик"], None, "2026-07-10T10:00:00+00:00", "2026-07-10T11:00:00+00:00",
+    )
+    recall = get_handler(service, "recall_memory")
+    text = await recall(RecallArgs(query="что ты знаешь о выборе подрядчика?"))
+    assert "ИП Иванов" in text                    # актуальное решение
+    assert "ранее" in text and "Ромашка" in text  # история вытеснения видна
+    assert "Из прошлых разговоров" in text and "2026-07-10" in text
+
+
+async def test_recall_project_filter(service: MemoryService) -> None:
+    store = service._store  # юнит-тест внутренней связки
+    await store.add("owner", "fact", "снаряжение", "нужна палатка", project="Экспедиция")
+    await store.add("owner", "fact", "снаряжение", "рюкзак порвался")
+    recall = get_handler(service, "recall_memory")
+    text = await recall(RecallArgs(query="снаряжение", project="Экспедиция"))
+    assert "палатка" in text and "рюкзак" not in text
+
+
+async def test_review_text_marks_auto_facts(db: Database, service: MemoryService) -> None:
+    await service.remember("fact", "ручное", "записано явно")
+    store = MemoryStore(db)
+    await store.add("owner", "fact", "авто", "извлечено из разговора", source="auto:conv1")
+    text = await service.review_text()
+    assert "активных фактов — 2" in text
+    assert "🤖" in text and "✍️" in text
+    assert "забудь" in text
+
+
+async def test_review_text_empty_memory(service: MemoryService) -> None:
+    text = await service.review_text()
+    assert "новых фактов не появилось" in text
 
 
 async def test_remember_args_validation() -> None:

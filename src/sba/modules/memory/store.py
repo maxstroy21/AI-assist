@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
 
@@ -30,6 +30,10 @@ ACTIVE = "superseded_by IS NULL AND retracted_at IS NULL"
 MEMORY_COLLECTION = "memory"
 VECTOR_POOL = 12  # кандидатов от векторной половины до слияния
 
+# Типы, у которых по одной теме актуальна одна запись: новая вытесняет старую
+# через superseded_by, история сохраняется («решили X, потом передумали на Y»)
+SUPERSEDING_TYPES = ("preference", "decision")
+
 
 def _point_id(fact_id: str) -> str:
     """id факта (32 hex) → канонический UUID для Qdrant."""
@@ -43,6 +47,9 @@ class FactView:
     subject: str
     content: str
     created_at: str
+    source: str = "explicit"
+    confidence: float = 1.0
+    project: str | None = None
 
 
 def _view(row: object) -> FactView:
@@ -52,6 +59,9 @@ def _view(row: object) -> FactView:
         subject=row["subject"],  # type: ignore[index]
         content=row["content"],  # type: ignore[index]
         created_at=row["created_at"],  # type: ignore[index]
+        source=row["source"],  # type: ignore[index]
+        confidence=float(row["confidence"]),  # type: ignore[index]
+        project=row["project"],  # type: ignore[index]
     )
 
 
@@ -78,29 +88,33 @@ class MemoryStore:
         content: str,
         source: str = "explicit",
         confidence: float = 1.0,
+        project: str | None = None,
     ) -> FactView:
         fact_id = uuid.uuid4().hex
         now = datetime.now(UTC).isoformat()
-        if fact_type == "preference":
-            # предпочтение по той же теме вытесняет старое (актуально одно)
+        if fact_type in SUPERSEDING_TYPES:
+            # запись по той же теме вытесняет старую (актуальна одна)
             superseded = await self._db.fetch_all(
-                f"SELECT id FROM memory_facts WHERE user_id=? AND type='preference'"
+                f"SELECT id FROM memory_facts WHERE user_id=? AND type=?"
                 f" AND lower(subject)=lower(?) AND {ACTIVE}",
-                (user_id, subject),
+                (user_id, fact_type, subject),
             )
             await self._db.execute(
                 f"UPDATE memory_facts SET superseded_by=?, updated_at=?"
-                f" WHERE user_id=? AND type='preference'"
+                f" WHERE user_id=? AND type=?"
                 f" AND lower(subject)=lower(?) AND {ACTIVE}",
-                (fact_id, now, user_id, subject),
+                (fact_id, now, user_id, fact_type, subject),
             )
             await self._drop_vectors([str(r["id"]) for r in superseded])
         await self._db.execute(
             "INSERT INTO memory_facts"
             " (id, user_id, type, subject, content, source, confidence,"
-            "  created_at, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (fact_id, user_id, fact_type, subject, content, source, confidence, now, now),
+            "  created_at, updated_at, project)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                fact_id, user_id, fact_type, subject, content, source,
+                confidence, now, now, project,
+            ),
         )
         await self._db.execute(
             "INSERT INTO memory_fts (subject, content, fact_id) VALUES (?, ?, ?)",
@@ -108,10 +122,21 @@ class MemoryStore:
         )
         await self._add_vector(fact_id, user_id, subject, content)
         return FactView(
-            id=fact_id, type=fact_type, subject=subject, content=content, created_at=now
+            id=fact_id, type=fact_type, subject=subject, content=content,
+            created_at=now, source=source, confidence=confidence, project=project,
         )
 
-    async def search(self, user_id: str, query: str, k: int = 6) -> list[FactView]:
+    async def search(
+        self, user_id: str, query: str, k: int = 6, project: str | None = None
+    ) -> list[FactView]:
+        found = await self._search_unfiltered(user_id, query, k if project is None else k * 3)
+        if project is not None:
+            # фильтр в Python: SQLite lower() не приводит кириллицу к нижнему регистру
+            wanted = project.strip().lower()
+            found = [f for f in found if (f.project or "").strip().lower() == wanted]
+        return found[:k]
+
+    async def _search_unfiltered(self, user_id: str, query: str, k: int) -> list[FactView]:
         fts = build_fts_query(query)
         if fts is None:
             # «что ты помнишь?» — показываем свежие факты
@@ -136,6 +161,33 @@ class MemoryStore:
         missing = [fact_id for fact_id in merged if fact_id not in by_id]
         by_id.update(await self._by_ids(user_id, missing))
         return [by_id[i] for i in merged if i in by_id]
+
+    async def history(self, fact_id: str, limit: int = 3) -> list[FactView]:
+        """Цепочка вытесненных предшественников факта (новые → старые)."""
+        chain: list[FactView] = []
+        current = fact_id
+        for _ in range(limit):
+            row = await self._db.fetch_one(
+                "SELECT * FROM memory_facts WHERE superseded_by=?"
+                " ORDER BY created_at DESC LIMIT 1",
+                (current,),
+            )
+            if row is None:
+                break
+            fact = _view(row)
+            chain.append(fact)
+            current = fact.id
+        return chain
+
+    async def recent(self, user_id: str, days: int = 7, limit: int = 30) -> list[FactView]:
+        """Факты, записанные за последние N дней (для ручной ревизии /memory)."""
+        cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
+        rows = await self._db.fetch_all(
+            f"SELECT * FROM memory_facts WHERE user_id=? AND created_at>=? AND {ACTIVE}"
+            f" ORDER BY created_at DESC LIMIT ?",
+            (user_id, cutoff, limit),
+        )
+        return [_view(r) for r in rows]
 
     async def retract(self, user_id: str, query: str) -> list[FactView]:
         """Мягкое «забудь»: помечает найденные факты retracted_at."""
