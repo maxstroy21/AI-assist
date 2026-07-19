@@ -429,6 +429,27 @@ async def test_path_mention_without_tools_gets_audit_warning(db: Database) -> No
     assert "/audit" in text  # …но с предупреждением о непроверенности
 
 
+async def test_task_claim_without_tools_gets_warning(db: Database) -> None:
+    """Модель заявляет «создана задача №…» без вызова инструмента — фабрикация."""
+    llm = FakeLLM(replies=["Готово. Создана задача №a1b2c3 на письмо."])
+    text = await collect(
+        make_orchestrator(llm, db, tools=[probe_spec([])]), "ну ладно, хорошо"
+    )
+    assert "не создана" in text.lower()
+    assert "/tasks" in text
+
+
+async def test_recurring_phrasing_forces_tool(db: Database) -> None:
+    """«каждое утро…» и «напоминал» — задачные темы: принуждение к инструменту."""
+    for phrase in ("каждое утро отправляй письмо", "хочу чтобы ты напоминал мне"):
+        llm = FakeLLM(
+            replies=[[ToolCall(id="c1", name="probe", arguments={"value": "x"})], "готово"]
+        )
+        orch = make_orchestrator(llm, db, tools=[probe_spec([])])
+        await collect(orch, phrase)
+        assert llm.seen_tool_choice[0] == "required", phrase
+
+
 async def test_answer_after_real_tool_call_has_no_warning(db: Database) -> None:
     llm = FakeLLM(
         replies=[
