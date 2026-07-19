@@ -164,6 +164,11 @@ ruff check . && mypy && lint-imports && pytest -q
 Роли моделей — в `config/models.yaml`; диагностический режим без LLM:
 `SBA__AGENT__PROCESSOR=echo`.
 
+При старте ассистент прогревает модель (загружает её в RAM) до приёма сообщений
+— в логе видно `model_warming_up` → `model_ready`. На CPU это занимает минуты,
+и в это время бот сознательно молчит: зато первый вопрос отвечается сразу, а не
+падает по таймауту. Отключить прогрев: `llm.keep_warm_minutes: 0`.
+
 ## Подключение Telegram
 
 1. Создайте бота: в Telegram напишите [@BotFather](https://t.me/BotFather) → `/newbot` →

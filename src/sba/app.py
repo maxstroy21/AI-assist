@@ -50,10 +50,13 @@ log = structlog.get_logger(__name__)
 
 
 async def keep_warm_loop(gateway: ModelGateway, interval_seconds: float) -> None:
-    """Фоновый прогрев: не даёт Ollama выгрузить chat-модель из RAM."""
+    """Фоновый прогрев: не даёт Ollama выгрузить chat-модель из RAM.
+
+    Пауза идёт первой: стартовый прогрев уже выполнен в App.run() до приёма
+    сообщений, повторять его сразу незачем."""
     while True:
-        await gateway.warmup()
         await asyncio.sleep(interval_seconds)
+        await gateway.warmup()
 
 
 class App:
@@ -220,6 +223,12 @@ class App:
             return
         background: list[asyncio.Task[None]] = []
         if self.gateway is not None and self.config.llm.keep_warm_minutes > 0:
+            # прогрев ДО приёма сообщений и ДО старта индексатора: первый вопрос
+            # после запуска не ждёт холодную загрузку модели и не ловит ReadTimeout
+            # (загрузка на CPU — минуты; в это время бот сознательно молчит)
+            log.info("model_warming_up", hint="загружаю модель в память, подождите")
+            await self.gateway.warmup()
+            log.info("model_ready")
             background.append(
                 asyncio.create_task(
                     keep_warm_loop(self.gateway, self.config.llm.keep_warm_minutes * 60)
