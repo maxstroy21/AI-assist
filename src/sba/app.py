@@ -23,7 +23,7 @@ from sba.core.history import HistoryStore
 from sba.core.processor import EchoProcessor
 from sba.core.router import Router
 from sba.core.tools.registry import ToolRegistry
-from sba.core.types import ChannelAdapter, MessageProcessor
+from sba.core.types import ChannelAdapter, MessageProcessor, OutgoingMessage
 from sba.infra.audit import AuditLog
 from sba.infra.config import Config, ConfigError, load_config
 from sba.infra.db import Database
@@ -41,7 +41,14 @@ from sba.modules.memory.tools import build_memory_tools
 from sba.modules.rag.service import RAGService
 from sba.modules.rag.store import ChunkStore
 from sba.modules.rag.tools import build_rag_tools
+from sba.modules.reminders.brief import MorningBrief, parse_brief_time
+from sba.modules.reminders.service import ReminderService
+from sba.modules.reminders.store import ReminderStore
+from sba.modules.reminders.tools import build_reminder_tools
+from sba.modules.scheduler.service import JobFired, SchedulerService
+from sba.modules.scheduler.store import SchedulerStore
 from sba.modules.tasks.dates import WhenParser
+from sba.modules.tasks.events import TaskChanged
 from sba.modules.tasks.service import TasksService
 from sba.modules.tasks.store import TaskStore
 from sba.modules.tasks.tools import build_task_tools
@@ -68,6 +75,9 @@ class App:
         self.gateway: ModelGateway | None = None
         self.vectors: VectorStore | None = None
         self.indexer: IndexerService | None = None
+        self.scheduler: SchedulerService | None = None
+        self.reminders: ReminderService | None = None
+        self.brief: MorningBrief | None = None
         self.channels: list[ChannelAdapter] = []
 
     @classmethod
@@ -118,7 +128,10 @@ class App:
 
             tasks: TasksService | None = None
             tasks_cfg = config.modules.tasks
-            if tasks_cfg.enabled:
+            reminders_cfg = config.modules.reminders
+            tz = ZoneInfo(config.app.timezone)
+            parser: WhenParser | None = None
+            if tasks_cfg.enabled or reminders_cfg.enabled:
                 if not app.gateway.has_role("extraction"):
                     log.warning(
                         "tasks_no_extraction_role",
@@ -127,18 +140,66 @@ class App:
                     )
                 parser = WhenParser(
                     app.gateway if app.gateway.has_role("extraction") else None,
-                    ZoneInfo(config.app.timezone),
+                    tz,
                     default_hour=tasks_cfg.default_hour,
                     clarify_confidence=tasks_cfg.clarify_confidence,
                 )
+            if tasks_cfg.enabled:
+                assert parser is not None
                 tasks = TasksService(
                     TaskStore(app.db),
                     parser,
-                    ZoneInfo(config.app.timezone),
+                    tz,
                     list_limit=tasks_cfg.list_limit,
+                    bus=app.bus,
                 )
                 for spec in build_task_tools(tasks):
                     registry.register(spec)
+
+            if reminders_cfg.enabled:
+                assert parser is not None
+                app.scheduler = SchedulerService(
+                    SchedulerStore(app.db),
+                    app.bus,
+                    tz,
+                    tick_seconds=config.modules.scheduler.tick_seconds,
+                    misfire_grace_minutes=config.modules.scheduler.misfire_grace_minutes,
+                )
+                # доставка через Router (создаётся ниже) — позднее связывание
+                async def deliver_notification(out: OutgoingMessage) -> None:
+                    assert app.router is not None
+                    await app.router.deliver(out)
+
+                app.reminders = ReminderService(
+                    ReminderStore(app.db),
+                    app.scheduler,
+                    parser,
+                    tz,
+                    deliver=deliver_notification,
+                    targets=app._notify_targets(),
+                    audit=audit,
+                    tasks=tasks,
+                    snooze_minutes=reminders_cfg.snooze_minutes,
+                    followup_minutes=int(reminders_cfg.followup_hours * 60),
+                    default_hour=tasks_cfg.default_hour,
+                )
+                reminders = app.reminders
+                app.bus.subscribe(JobFired, reminders.on_job_fired)
+                app.bus.subscribe(TaskChanged, reminders.on_task_changed)
+                for spec in build_reminder_tools(reminders):
+                    registry.register(spec)
+                if reminders_cfg.morning_brief.enabled:
+                    app.brief = MorningBrief(
+                        app.scheduler,
+                        ReminderStore(app.db),
+                        tz,
+                        deliver=deliver_notification,
+                        targets=app._notify_targets(),
+                        audit=audit,
+                        at=parse_brief_time(reminders_cfg.morning_brief.time),
+                        tasks=tasks,
+                    )
+                    app.bus.subscribe(JobFired, app.brief.on_job_fired)
 
             memory: MemoryService | None = None
             if config.modules.memory.enabled:
@@ -175,6 +236,8 @@ class App:
             processor=processor,
             session_idle_timeout=timedelta(minutes=config.session.idle_timeout_minutes),
         )
+        if app.reminders is not None:
+            app.router.register_action_handler("rem", app.reminders.handle_action)
 
         if config.channels.cli.enabled:
             cli = CliChannel(handle_incoming=app.router.handle_incoming)
@@ -191,11 +254,22 @@ class App:
                 token=config.channels.telegram.token,
                 allowed_user_ids=config.channels.telegram.allowed_user_ids,
                 handle_incoming=app.router.handle_incoming,
+                handle_action=app.router.handle_action,
             )
             app.router.register_channel(telegram)
             app.channels.append(telegram)
 
         return app
+
+    def _notify_targets(self) -> list[tuple[str, str]]:
+        """Каналы доставки уведомлений (напоминания, сводка): все активные."""
+        targets: list[tuple[str, str]] = []
+        telegram_cfg = self.config.channels.telegram
+        if telegram_cfg.enabled and telegram_cfg.allowed_user_ids:
+            targets.append(("telegram", str(telegram_cfg.allowed_user_ids[0])))
+        if self.config.channels.cli.enabled:
+            targets.append(("cli", "local"))
+        return targets
 
     def _build_extra_commands(
         self, rag_service: RAGService | None, tasks: TasksService | None
@@ -204,6 +278,8 @@ class App:
         commands: dict[str, tuple[str, Callable[[], Awaitable[str]]]] = {}
         if tasks is not None:
             commands["/tasks"] = ("открытые задачи по срокам", tasks.overview_text)
+        if self.reminders is not None:
+            commands["/reminders"] = ("предстоящие напоминания", self.reminders.overview_text)
         if self.indexer is not None and rag_service is not None:
             indexer, rag = self.indexer, rag_service
 
@@ -241,6 +317,16 @@ class App:
             )
         if self.indexer is not None:
             background.append(asyncio.create_task(self.indexer.run_forever()))
+        if self.scheduler is not None:
+            # порядок важен: сначала регистрация сводки и синхронизация задач,
+            # потом цикл — иначе перерегистрация может затереть созревший джоб
+            if self.brief is not None:
+                await self.brief.schedule()
+            if self.reminders is not None:
+                synced = await self.reminders.sync_open_tasks()
+                if synced:
+                    log.info("task_reminders_synced", tasks=synced)
+            background.append(asyncio.create_task(self.scheduler.run_forever()))
         try:
             await asyncio.gather(*(ch.start() for ch in self.channels))
         finally:

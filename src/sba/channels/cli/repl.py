@@ -46,6 +46,10 @@ class CliChannel:
     async def send(self, out: OutgoingMessage) -> None:
         prefix = "🔔 " if out.kind == OutgoingKind.NOTIFICATION else ""
         print(f"{prefix}ассистент> {out.text}")
+        if out.actions:
+            # кнопок в терминале нет — реагировать можно словами
+            labels = " | ".join(a.label for a in out.actions)
+            print(f"   [{labels}] — ответьте словами: «сделал», «напомни позже», «отмени»")
 
     async def send_stream(self, out: OutgoingMessage, deltas: AsyncIterator[str]) -> str:
         print("ассистент> ", end="", flush=True)

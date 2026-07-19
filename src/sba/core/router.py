@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import datetime, timedelta
 
 import structlog
@@ -45,10 +45,36 @@ class Router:
         self._processor = processor
         self._idle_timeout = session_idle_timeout
         self._channels: dict[str, ChannelAdapter] = {}
+        self._action_handlers: dict[str, Callable[[str, str], Awaitable[str]]] = {}
 
     def register_channel(self, channel: ChannelAdapter) -> None:
         self._channels[channel.name] = channel
         log.info("channel_registered", channel=channel.name)
+
+    # ── кнопки (Sprint 6) ────────────────────────────────────────────────────
+
+    def register_action_handler(
+        self, prefix: str, handler: Callable[[str, str], Awaitable[str]]
+    ) -> None:
+        """Обработчик кнопок с id «prefix:...»: (user_id, action_id) → текст-отклик.
+        Инъекция из app.py — ядро не знает модулей."""
+        self._action_handlers[prefix] = handler
+
+    async def handle_action(self, user_id: str, channel: str, action_id: str) -> str:
+        """Нажатие кнопки из канала. Возвращает текст-отклик для показа."""
+        prefix = action_id.split(":", 1)[0]
+        handler = self._action_handlers.get(prefix)
+        if handler is None:
+            log.warning("action_handler_missing", prefix=prefix, action_id=action_id)
+            return "Эта кнопка устарела и больше не работает."
+        bind_request_id(new_id())
+        try:
+            return await handler(user_id, action_id)
+        except Exception as exc:  # кнопка не должна ронять канал
+            log.error("action_failed", action_id=action_id, error=str(exc))
+            return "⚠️ Не получилось выполнить действие — попробуйте ещё раз."
+        finally:
+            clear_request_context()
 
     async def handle_incoming(self, msg: IncomingMessage) -> None:
         bind_request_id(msg.id)

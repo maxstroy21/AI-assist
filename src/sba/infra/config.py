@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -119,10 +120,50 @@ class TasksConfig(_Strict):
         return v
 
 
+class SchedulerConfig(_Strict):
+    tick_seconds: float = 15.0            # период проверки созревших джобов
+    misfire_grace_minutes: float = 240.0  # skip-джобы (сводка): доставить не позже grace
+
+    @field_validator("tick_seconds", "misfire_grace_minutes")
+    @classmethod
+    def _positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("значение должно быть > 0")
+        return v
+
+
+class MorningBriefConfig(_Strict):
+    enabled: bool = True
+    time: str = "08:30"
+
+    @field_validator("time")
+    @classmethod
+    def _valid_time(cls, v: str) -> str:
+        if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v):
+            raise ValueError(f"время сводки должно быть в формате ЧЧ:ММ, получено {v!r}")
+        return v
+
+
+class RemindersConfig(_Strict):
+    enabled: bool = True
+    snooze_minutes: int = 180        # «⏰ Позже» без уточнения времени
+    followup_hours: float = 24.0     # «пока не сделано»: период повторного напоминания
+    morning_brief: MorningBriefConfig = MorningBriefConfig()
+
+    @field_validator("snooze_minutes", "followup_hours")
+    @classmethod
+    def _positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("значение должно быть > 0")
+        return v
+
+
 class ModulesConfig(_Strict):
     memory: ChannelToggle = ChannelToggle(enabled=True)
     rag: RagConfig = RagConfig()
     tasks: TasksConfig = TasksConfig()
+    scheduler: SchedulerConfig = SchedulerConfig()
+    reminders: RemindersConfig = RemindersConfig()
 
 
 class LLMBehaviorConfig(_Strict):

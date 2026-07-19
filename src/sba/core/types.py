@@ -39,6 +39,14 @@ class IncomingMessage(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class MessageAction(BaseModel):
+    """Кнопка под сообщением (Sprint 6): id вида «prefix:операция:объект» —
+    канал возвращает его в Router.handle_action, префикс выбирает обработчик."""
+
+    id: str
+    label: str
+
+
 class OutgoingMessage(BaseModel):
     id: str = Field(default_factory=new_id)
     user_id: str
@@ -46,6 +54,7 @@ class OutgoingMessage(BaseModel):
     text: str
     kind: OutgoingKind = OutgoingKind.REPLY
     reply_to: str | None = None  # id входящего сообщения, если это ответ
+    actions: list[MessageAction] = []  # кнопки (канал без кнопок покажет текстом)
     created_at: datetime = Field(default_factory=utcnow)
 
 

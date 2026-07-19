@@ -435,7 +435,7 @@ async def test_task_claim_without_tools_gets_warning(db: Database) -> None:
     text = await collect(
         make_orchestrator(llm, db, tools=[probe_spec([])]), "ну ладно, хорошо"
     )
-    assert "не создана" in text.lower()
+    assert "не создано" in text.lower()
     assert "/tasks" in text
 
 

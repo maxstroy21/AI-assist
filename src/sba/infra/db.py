@@ -119,6 +119,47 @@ MIGRATIONS: list[str] = [
 
     CREATE VIRTUAL TABLE tasks_fts USING fts5(title, notes, project, task_id UNINDEXED);
     """,
+    """
+    CREATE TABLE scheduler_jobs (
+        id           TEXT PRIMARY KEY,
+        topic        TEXT NOT NULL,     -- кому событие: reminder.fire | brief.morning | ...
+        payload      TEXT NOT NULL,     -- JSON-аргументы события
+        next_fire_at TEXT NOT NULL,     -- ISO UTC следующего срабатывания
+        rrule        TEXT,              -- повторение RFC 5545; NULL — одноразовый
+        dtstart      TEXT,              -- ISO якорь RRULE (пояс владельца)
+        misfire      TEXT NOT NULL DEFAULT 'deliver',  -- deliver | skip (после grace)
+        created_at   TEXT NOT NULL,
+        updated_at   TEXT NOT NULL
+    );
+    CREATE INDEX idx_scheduler_due ON scheduler_jobs (next_fire_at);
+
+    CREATE TABLE reminders (
+        id                TEXT PRIMARY KEY,
+        user_id           TEXT NOT NULL,
+        text              TEXT NOT NULL,
+        task_id           TEXT,          -- авто-напоминание к задаче
+        due               TEXT NOT NULL, -- ISO с часовым поясом владельца
+        rrule             TEXT,          -- повторяющееся напоминание
+        followup_minutes  INTEGER,       -- «если не сделал — напомни снова» через N минут
+        status            TEXT NOT NULL, -- scheduled | done | cancelled
+        job_id            TEXT,          -- джоб в scheduler_jobs
+        source_message_id TEXT,
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL
+    );
+    CREATE INDEX idx_reminders_status ON reminders (user_id, status);
+    CREATE UNIQUE INDEX idx_reminders_task ON reminders (task_id)
+        WHERE task_id IS NOT NULL AND status = 'scheduled';
+
+    CREATE TABLE reminder_log (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        reminder_id  TEXT NOT NULL,
+        scheduled_for TEXT NOT NULL,    -- ISO момента, на который было назначено
+        delivered_at TEXT,              -- фактическая доставка (NULL — пропуск)
+        detail       TEXT NOT NULL DEFAULT '',  -- delivered | skipped_task_closed | ...
+        UNIQUE (reminder_id, scheduled_for)     -- идемпотентность после сбоя
+    );
+    """,
 ]
 
 
