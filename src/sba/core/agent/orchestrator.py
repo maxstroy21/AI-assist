@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 import structlog
 
+from sba.core import execctx
 from sba.core.agent.context import build_messages
 from sba.core.agent.language import strip_cjk
 from sba.core.history import HistoryReader
@@ -66,9 +67,23 @@ MEMORY_NUDGE = (
     "forget_memory — чтобы забыть. Не отвечай, что не умеешь запоминать, "
     "и не утверждай, что запомнил, без успешного вызова инструмента."
 )
+TASK_TOPIC_MARKERS = (
+    "задач", "туду", "todo", "дедлайн", "отметь", "выполнен", "сделано",
+    "по проекту", "напомни", "не забыть", "запланируй",
+)
+TASK_NUDGE = (
+    "Сообщение касается задач. ОБЯЗАТЕЛЬНО используй инструменты задач: "
+    "create_task — создать (срок передай словами в when), search_tasks — найти "
+    "или показать список (в т.ч. «что у меня по проекту»), complete_task — "
+    "отметить сделанной, update_task — изменить или отменить. Не сообщай, что "
+    "создал или закрыл задачу, без успешного вызова инструмента. Отправлять "
+    "напоминания сам ты ПОКА НЕ умеешь: на «напомни…» создай задачу со сроком "
+    "и честно скажи, что уведомление в срок пока не придёт."
+)
 TOPIC_NUDGES: tuple[tuple[tuple[str, ...], str], ...] = (
     (FILE_TOPIC_MARKERS, FILE_NUDGE),
     (MEMORY_TOPIC_MARKERS, MEMORY_NUDGE),
+    (TASK_TOPIC_MARKERS, TASK_NUDGE),
 )
 
 # Ollama игнорирует tool_choice=required (проверено вживую: модель отвечает
@@ -135,6 +150,8 @@ class AgentOrchestrator:
         self._extra_commands = extra_commands or {}
 
     async def process(self, msg: IncomingMessage, session: Session) -> Reply:
+        # привязка инструментов к источнику (задача ↔ сообщение, Sprint 5)
+        execctx.current_message_id.set(msg.id)
         service_reply = await self._service_command(msg.text)
         if service_reply is not None:
             return service_reply

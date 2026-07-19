@@ -105,9 +105,24 @@ class RagConfig(_Strict):
         return [ext.lower() for ext in v]
 
 
+class TasksConfig(_Strict):
+    enabled: bool = True
+    list_limit: int = 15          # сколько задач показывают /tasks и search_tasks
+    default_hour: int = 9         # час срока, если во фразе есть день, но нет времени
+    clarify_confidence: float = 0.6  # ниже — переспрашиваем вместо создания задачи
+
+    @field_validator("default_hour")
+    @classmethod
+    def _valid_hour(cls, v: int) -> int:
+        if not 0 <= v <= 23:
+            raise ValueError("default_hour должен быть в диапазоне 0–23")
+        return v
+
+
 class ModulesConfig(_Strict):
     memory: ChannelToggle = ChannelToggle(enabled=True)
     rag: RagConfig = RagConfig()
+    tasks: TasksConfig = TasksConfig()
 
 
 class LLMBehaviorConfig(_Strict):
