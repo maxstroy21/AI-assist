@@ -77,10 +77,14 @@ class ModelGateway:
     def has_role(self, role: Role) -> bool:
         return role in self._config.roles
 
-    async def warmup(self) -> None:
+    async def warmup(self) -> bool:
         """Держит chat-модель загруженной в RAM: запрос на 1 токен сбрасывает
         таймер выгрузки Ollama (OLLAMA_KEEP_ALIVE, по умолчанию 5 минут).
-        Без этого первый вопрос после простоя ждёт холодную загрузку минутами."""
+        Без этого первый вопрос после простоя ждёт холодную загрузку минутами.
+
+        Возвращает True, если модель ответила (значит, она в памяти). Ошибку
+        не бросает — прогрев не должен ронять приложение; False = не дождались
+        (холодная загрузка на CPU может превышать таймаут чтения)."""
         try:
             provider, rc = self._resolve("chat")
             await provider.chat(
@@ -90,8 +94,10 @@ class ModelGateway:
                 max_tokens=1,
             )
             log.debug("llm_keep_warm_ok", model=rc.model)
+            return True
         except Exception as exc:  # прогрев не должен ничего ронять
             log.warning("llm_keep_warm_failed", error=str(exc))
+            return False
 
     async def aclose(self) -> None:
         for provider in self._providers.values():

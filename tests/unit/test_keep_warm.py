@@ -24,7 +24,7 @@ def make_gateway(handler) -> ModelGateway:
     return gateway
 
 
-async def test_warmup_sends_one_token_ping() -> None:
+async def test_warmup_sends_one_token_ping_and_reports_success() -> None:
     seen: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -33,24 +33,26 @@ async def test_warmup_sends_one_token_ping() -> None:
             200, json={"model": "m", "choices": [{"message": {"content": "."}}]}
         )
 
-    await make_gateway(handler).warmup()
+    assert await make_gateway(handler).warmup() is True
     assert seen[0]["max_tokens"] == 1
     assert seen[0]["messages"] == [{"role": "user", "content": "ping"}]
 
 
-async def test_warmup_swallows_errors() -> None:
+async def test_warmup_returns_false_on_error_without_raising() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("нет Ollama")
 
-    await make_gateway(handler).warmup()  # не должно бросить
+    # не бросает, но честно сообщает, что модель не поднялась
+    assert await make_gateway(handler).warmup() is False
 
 
 async def test_keep_warm_loop_pings_repeatedly() -> None:
     calls = {"n": 0}
 
     class StubGateway:
-        async def warmup(self) -> None:
+        async def warmup(self) -> bool:
             calls["n"] += 1
+            return True
 
     task = asyncio.create_task(keep_warm_loop(StubGateway(), interval_seconds=0.01))  # type: ignore[arg-type]
     await asyncio.sleep(0.05)

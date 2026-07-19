@@ -15,8 +15,10 @@ from datetime import UTC, datetime, tzinfo
 
 import structlog
 
+from sba.core.events import EventBus
 from sba.llm.gateway import LLMError
 from sba.modules.tasks.dates import WhenParseError, WhenParser, describe_rrule, next_occurrence
+from sba.modules.tasks.events import TaskChanged
 from sba.modules.tasks.store import TaskStore, TaskView
 
 log = structlog.get_logger(__name__)
@@ -44,12 +46,30 @@ class TasksService:
         timezone: tzinfo,
         owner_id: str = OWNER_ID,
         list_limit: int = 15,
+        bus: EventBus | None = None,
     ) -> None:
         self._store = store
         self._parser = parser
         self._tz = timezone
         self._owner = owner_id
         self._list_limit = list_limit
+        self._bus = bus
+
+    async def _publish_changed(
+        self, reason: str, task: TaskView
+    ) -> None:
+        if self._bus is None:
+            return
+        await self._bus.publish(
+            TaskChanged(
+                reason=reason,  # type: ignore[arg-type]
+                task_id=task.id,
+                title=task.title,
+                status=task.status,
+                due=task.due,
+                rrule=task.rrule,
+            )
+        )
 
     # ── операции для инструментов ────────────────────────────────────────────
 
@@ -86,21 +106,26 @@ class TasksService:
             rrule=rrule,
             source_message_id=source_message_id,
         )
+        await self._publish_changed("created", task)
         return CreateOutcome(task=task, warning=warning)
 
     async def search(
-        self, query: str = "", project: str = "", status: str = "open"
+        self, query: str = "", project: str = "", status: str = "open",
+        limit: int | None = None,
     ) -> list[TaskView]:
         return await self._store.search(
             self._owner,
             query=query,
             project=project.strip() or None,
             status=None if status == "all" else status,
-            limit=self._list_limit,
+            limit=limit if limit is not None else self._list_limit,
         )
 
     async def resolve(self, ref: str) -> list[TaskView]:
         return await self._store.resolve(self._owner, ref)
+
+    async def get(self, task_id: str) -> TaskView | None:
+        return await self._store.get(self._owner, task_id)
 
     async def complete(self, task: TaskView) -> tuple[TaskView, str | None]:
         """Закрыть задачу; у повторяющихся — сдвинуть срок. Возвращает
@@ -116,11 +141,13 @@ class TasksService:
                     due=nxt.isoformat(), rrule=task.rrule, completed_at=stamp,
                 )
                 assert updated is not None
+                await self._publish_changed("completed", updated)
                 return updated, self.format_due(updated.due)
         updated = await self._store.update(
             self._owner, task.id, status="done", completed_at=stamp
         )
         assert updated is not None
+        await self._publish_changed("completed", updated)
         return updated, None
 
     async def update(
@@ -166,6 +193,7 @@ class TasksService:
             rrule=rrule,
         )
         assert updated is not None
+        await self._publish_changed("updated", updated)
         return updated, None, warning
 
     async def count_open(self) -> int:

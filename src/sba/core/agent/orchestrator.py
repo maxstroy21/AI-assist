@@ -73,23 +73,30 @@ TASK_TOPIC_MARKERS = (
     "запланируй", "ежеднев", "еженедель", "ежемесяч", "кажд", "по утрам",
 )
 TASK_NUDGE = (
-    "Сообщение касается задач. Создавать задачи ты УМЕЕШЬ — не говори, что это "
-    "недоступно. ОБЯЗАТЕЛЬНО используй инструменты задач: create_task — создать "
-    "(срок и повторение передай словами в when), search_tasks — найти или "
-    "показать список (в т.ч. «что у меня по проекту»), complete_task — отметить "
-    "сделанной, update_task — изменить или отменить. Не сообщай, что создал или "
-    "закрыл задачу, без успешного вызова инструмента. Различай: ВОПРОС о задаче "
-    "(«напомни/подскажи, когда/во сколько…», «что у меня…») — это поиск, вызови "
-    "search_tasks и ответь по найденному, НЕ создавай новую. ПРОСЬБА завести дело "
-    "на будущее («напоминай каждое утро…», «поставь задачу…») — вызови create_task "
-    "и честно предупреди, что сам в срок не уведомишь и внешнее действие "
-    "(письмо, звонок) не выполнишь (это появится позже)."
+    "Сообщение касается задач или напоминаний. И то и другое ты УМЕЕШЬ — не "
+    "говори, что это недоступно. ОБЯЗАТЕЛЬНО используй инструменты: "
+    "create_reminder — «напомни/напоминай…» (само придёт в срок; повторение "
+    "словами в when; «пока не сделаю» — repeat_until_done=true), create_task — "
+    "«поставь задачу / добавь в дела» (срок словами в when), search_tasks и "
+    "list_reminders — найти или показать список, complete_task — отметить "
+    "сделанной, update_task — изменить или отменить задачу, snooze_reminder / "
+    "cancel_reminder — перенести или отменить напоминание. Не сообщай, что "
+    "создал, перенёс или закрыл, без успешного вызова инструмента. Различай: "
+    "ВОПРОС о том, что уже есть («напомни/подскажи, когда/во сколько…», «что у "
+    "меня…») — это поиск: вызови search_tasks или list_reminders и ответь по "
+    "найденному, НЕ создавай новое. ПРОСЬБА о будущем напоминании («напомни "
+    "завтра…», «напоминай каждое утро…») — вызови create_reminder."
 )
-TOPIC_NUDGES: tuple[tuple[tuple[str, ...], str], ...] = (
-    (FILE_TOPIC_MARKERS, FILE_NUDGE),
-    (MEMORY_TOPIC_MARKERS, MEMORY_NUDGE),
-    (TASK_TOPIC_MARKERS, TASK_NUDGE),
+# Каждая тема несёт и подсказку, и набор модулей-инструментов: при
+# topic_scoped_tools модели уходят только релевантные теме инструменты
+# (короче промпт → быстрее ответ на CPU, меньше путаницы у слабой модели).
+TOPIC_RULES: tuple[tuple[tuple[str, ...], str, frozenset[str]], ...] = (
+    (FILE_TOPIC_MARKERS, FILE_NUDGE, frozenset({"files", "rag"})),
+    (MEMORY_TOPIC_MARKERS, MEMORY_NUDGE, frozenset({"memory"})),
+    (TASK_TOPIC_MARKERS, TASK_NUDGE, frozenset({"tasks", "reminders"})),
 )
+# get_current_time дёшев и полезен для расчёта дат — доступен всегда
+ALWAYS_MODULES = frozenset({"basic"})
 
 # Ollama игнорирует tool_choice=required (проверено вживую: модель отвечает
 # текстом «из головы» на прямой вопрос о файлах). Принуждение выполняем сами:
@@ -111,16 +118,19 @@ UNVERIFIED_PATH_WARNING = (
     "\n⚠️ В этом ответе инструменты не вызывались — упомянутые файлы могут "
     "быть выдуманы. Проверить реальные действия: /audit."
 )
-# Та же защита для задач: модель без вызова инструмента заявляет «создана/закрыта
-# задача №…» и выдаёт пример id из промпта за настоящий (подтверждено: /tasks пуст)
+# Та же защита для задач и напоминаний: модель без вызова инструмента заявляет
+# «создана/закрыта задача №…» и выдаёт пример id из промпта за настоящий
+# (подтверждено: /tasks пуст)
 TASK_CLAIM_RE = re.compile(
-    r"(созда|закры|удал|отмен|отмеч|выполн|перенёс|перенес|обнов)\w*\s+задач|"
-    r"задач\w*\s*(созда|закры|удал|отмен|отмеч|выполн|№|#)",
+    r"(созда|закры|удал|отмен|отмеч|выполн|перенёс|перенес|обнов)\w*\s+"
+    r"(задач|напоминани)|(задач|напоминани)\w*\s*"
+    r"(созда|закры|удал|отмен|отмеч|выполн|№|#)|буду напоминать|напомню в?\s*\d",
     re.IGNORECASE,
 )
 UNVERIFIED_TASK_WARNING = (
-    "\n⚠️ Ни один инструмент задач не вызывался — задача НЕ создана и не "
-    "изменена, а номер мог быть выдуман. Проверьте список: /tasks."
+    "\n⚠️ Ни один инструмент задач или напоминаний не вызывался — на самом деле "
+    "ничего НЕ создано и не изменено, а номер мог быть выдуман. Проверьте "
+    "списки: /tasks и /reminders."
 )
 
 
@@ -186,13 +196,19 @@ class AgentOrchestrator:
             log.info("destructive_dropped", tool=pending.call.name)
 
         lowered = msg.text.lower()
-        nudges = [
-            text
-            for markers, text in TOPIC_NUDGES
-            if any(marker in lowered for marker in markers)
-        ]
+        nudges: list[str] = []
+        allowed_modules: set[str] = set(ALWAYS_MODULES)
+        for markers, nudge, modules in TOPIC_RULES:
+            if any(marker in lowered for marker in markers):
+                nudges.append(nudge)
+                allowed_modules |= modules
         messages = await self._build_context(msg, session, nudges=nudges)
-        return self._agent_stream(messages, key, force_first_tool=bool(nudges))
+        # scope=None → все инструменты (по умолчанию); при topic_scoped_tools
+        # шлём только релевантные теме (на общую реплику без темы — только basic)
+        scope = allowed_modules if self._config.topic_scoped_tools else None
+        return self._agent_stream(
+            messages, key, allowed_modules=scope, force_first_tool=bool(nudges)
+        )
 
     # ── служебные команды (мимо LLM, детерминированно) ───────────────────────
 
@@ -270,8 +286,9 @@ class AgentOrchestrator:
         key: tuple[str, str],
         force_first_tool: bool = False,
         tool_already_executed: bool = False,
+        allowed_modules: set[str] | None = None,
     ) -> AsyncIterator[str]:
-        tools = self._registry.openai_schemas()
+        tools = self._registry.openai_schemas(allowed_modules)
         shown_any = False
         executed: dict[tuple[str, str], str] = {}  # дедуп повторных одинаковых вызовов
         # принуждение к инструменту: держится, пока не случится реальный вызов

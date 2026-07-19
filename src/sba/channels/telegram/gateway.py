@@ -16,7 +16,12 @@ from time import monotonic
 import structlog
 from aiogram import Bot, Dispatcher, F
 from aiogram.exceptions import TelegramBadRequest, TelegramRetryAfter
-from aiogram.types import Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+)
 
 from sba.channels.telegram.split import cut_once, split_text
 from sba.core.types import IncomingMessage, OutgoingMessage
@@ -70,13 +75,17 @@ class TelegramChannel:
         token: str,
         allowed_user_ids: list[int],
         handle_incoming: Callable[[IncomingMessage], Awaitable[None]],
+        handle_action: Callable[[str, str, str], Awaitable[str]] | None = None,
     ) -> None:
         self._bot = Bot(token=token)
         self._dp = Dispatcher()
         self._allowed = set(allowed_user_ids)
         self._handle_incoming = handle_incoming
+        # (user_id, channel, action_id) → текст-отклик; Router.handle_action
+        self._handle_action = handle_action
         self._dp.message.register(self._on_text, F.text)
         self._dp.message.register(self._on_unsupported)
+        self._dp.callback_query.register(self._on_callback)
 
     # ── жизненный цикл ───────────────────────────────────────────────────────
 
@@ -132,12 +141,48 @@ class TelegramChannel:
             "в следующих версиях."
         )
 
+    async def _on_callback(self, callback: CallbackQuery) -> None:
+        """Нажатие inline-кнопки (напоминания ✅/⏰/✖ и будущие подтверждения)."""
+        user = callback.from_user
+        if user.id not in self._allowed:
+            log.warning("telegram_unauthorized_callback", user_id=user.id)
+            await callback.answer()
+            return
+        if self._handle_action is None or not callback.data:
+            await callback.answer()
+            return
+        ack = await self._handle_action(str(user.id), self.name, callback.data)
+        with suppress(TelegramBadRequest, TelegramRetryAfter):
+            await callback.answer()
+        message = callback.message
+        if isinstance(message, Message):
+            # дописываем отклик в само сообщение и убираем кнопки:
+            # видно, на что нажали, и нельзя нажать дважды
+            base = message.text or ""
+            await self._safe_edit(message, f"{base}\n\n{ack}")
+        else:  # сообщение недоступно (слишком старое) — отвечаем новым
+            await self._send_with_flood_control(user.id, ack)
+
     # ── исходящие ────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _keyboard(out: OutgoingMessage) -> InlineKeyboardMarkup | None:
+        if not out.actions:
+            return None
+        return InlineKeyboardMarkup(
+            inline_keyboard=[[
+                InlineKeyboardButton(text=a.label, callback_data=a.id)
+                for a in out.actions
+            ]]
+        )
 
     async def send(self, out: OutgoingMessage) -> None:
         chat_id = int(out.user_id)
-        for part in split_text(out.text) or ["(пусто)"]:
-            await self._send_with_flood_control(chat_id, part)
+        parts = split_text(out.text) or ["(пусто)"]
+        for index, part in enumerate(parts):
+            # кнопки — на последней части (под ними их и ждёшь)
+            markup = self._keyboard(out) if index == len(parts) - 1 else None
+            await self._send_with_flood_control(chat_id, part, markup)
 
     async def send_stream(self, out: OutgoingMessage, deltas: AsyncIterator[str]) -> str:
         """Черновик «✍️ …» редактируется по мере генерации; длинный ответ
@@ -185,9 +230,11 @@ class TelegramChannel:
             except TelegramBadRequest:
                 return  # «message is not modified» и подобное — не критично
 
-    async def _send_with_flood_control(self, chat_id: int, text: str) -> Message:
+    async def _send_with_flood_control(
+        self, chat_id: int, text: str, markup: InlineKeyboardMarkup | None = None
+    ) -> Message:
         try:
-            return await self._bot.send_message(chat_id, text)
+            return await self._bot.send_message(chat_id, text, reply_markup=markup)
         except TelegramRetryAfter as exc:
             await asyncio.sleep(exc.retry_after)
-            return await self._bot.send_message(chat_id, text)
+            return await self._bot.send_message(chat_id, text, reply_markup=markup)
