@@ -441,7 +441,11 @@ async def test_task_claim_without_tools_gets_warning(db: Database) -> None:
 
 async def test_recurring_phrasing_forces_tool(db: Database) -> None:
     """«каждое утро…» и «напоминал» — задачные темы: принуждение к инструменту."""
-    for phrase in ("каждое утро отправляй письмо", "хочу чтобы ты напоминал мне"):
+    for phrase in (
+        "каждое утро отправляй письмо",
+        "хочу чтобы ты напоминал мне",
+        "напомни, когда мне надо отправить письмо?",  # императив «напомни» тоже тема
+    ):
         llm = FakeLLM(
             replies=[[ToolCall(id="c1", name="probe", arguments={"value": "x"})], "готово"]
         )
