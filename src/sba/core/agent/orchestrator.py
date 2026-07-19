@@ -9,8 +9,9 @@
 from __future__ import annotations
 
 import json
+import re
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -42,13 +43,18 @@ PENDING_TTL_SECONDS = 300.0
 FILE_TOPIC_MARKERS = (
     "файл", "папк", "найди", "найти", "поищи", "прочит", "покаж", "удали",
     "downloads", "documents", "загрузк", "документ", ".log", ".txt", ".md",
-    ".pdf", ".docx", ".xlsx", "лог",
+    ".pdf", ".docx", ".xlsx", "лог", "заметк", "конспект",
+    # вопросы о наличии информации — это поиск по содержимому (search_documents)
+    "инфа", "инфо", "информаци", "что говорится", "что написано", "что сказано",
 )
 FILE_NUDGE = (
-    "Вопрос пользователя касается файлов. ОБЯЗАТЕЛЬНО сначала вызови подходящий "
-    "инструмент (find_files, list_files или read_document) и отвечай только по "
-    "его результату. Не отвечай по памяти. Не доверяй прошлым ответам из "
-    "истории диалога — они могли быть ошибочными, проверь инструментом заново."
+    "Вопрос пользователя касается файлов или документов. ОБЯЗАТЕЛЬНО сначала "
+    "вызови подходящий инструмент: search_documents — если вопрос о СОДЕРЖИМОМ "
+    "документов или заметок; find_files или list_files — если нужен поиск/список "
+    "файлов по именам; read_document — прочитать конкретный файл. Отвечай только "
+    "по результату инструмента, с указанием файла-источника. Не отвечай по памяти. "
+    "Не доверяй прошлым ответам из истории диалога — они могли быть ошибочными, "
+    "проверь инструментом заново."
 )
 MEMORY_TOPIC_MARKERS = (
     "запомни", "запомн", "забудь", "забыть", "помнишь", "что ты знаешь",
@@ -63,6 +69,26 @@ MEMORY_NUDGE = (
 TOPIC_NUDGES: tuple[tuple[tuple[str, ...], str], ...] = (
     (FILE_TOPIC_MARKERS, FILE_NUDGE),
     (MEMORY_TOPIC_MARKERS, MEMORY_NUDGE),
+)
+
+# Ollama игнорирует tool_choice=required (проверено вживую: модель отвечает
+# текстом «из головы» на прямой вопрос о файлах). Принуждение выполняем сами:
+# отказ от вызова → один строгий повтор → честный отказ вместо выдумки.
+FORCE_RETRY_NUDGE = (
+    "Ты ответил текстом, не вызвав инструмент, — так нельзя. Данные без "
+    "инструмента считаются выдуманными. Сейчас же вызови подходящий инструмент."
+)
+FORCED_REFUSAL = (
+    "⚠️ Модель дважды попыталась ответить без проверки инструментом — такой "
+    "ответ может быть выдуман, поэтому я его не показываю. Переформулируйте "
+    "вопрос (например: «найди в документах …») или начните новый разговор: /new."
+)
+# Растяжка на фабрикацию вне принудительных тем: в ответе упомянуты пути или
+# файлы, хотя за весь ход не было ни одного реального вызова инструмента
+PATH_MENTION_RE = re.compile(r"[A-Za-z]:\\|\.(docx|xlsx|pdf|txt|md|log)\b")
+UNVERIFIED_PATH_WARNING = (
+    "\n⚠️ В этом ответе инструменты не вызывались — упомянутые файлы могут "
+    "быть выдуманы. Проверить реальные действия: /audit."
 )
 
 
@@ -93,6 +119,7 @@ class AgentOrchestrator:
         config: AgentConfig,
         timezone: str,
         memory: MemoryPort | None = None,
+        extra_commands: dict[str, tuple[str, Callable[[], Awaitable[str]]]] | None = None,
     ) -> None:
         self._gateway = gateway
         self._history = history
@@ -103,6 +130,9 @@ class AgentOrchestrator:
         self._tz = ZoneInfo(timezone)
         self._template = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
         self._pending: dict[tuple[str, str], PendingAction] = {}
+        # сервис-команды модулей: (описание, обработчик); инъекция из app.py,
+        # чтобы ядро не знало о модулях (границы docs/03)
+        self._extra_commands = extra_commands or {}
 
     async def process(self, msg: IncomingMessage, session: Session) -> Reply:
         service_reply = await self._service_command(msg.text)
@@ -153,11 +183,17 @@ class AgentOrchestrator:
                 for ts, kind, name, detail in rows
             ]
             return "Последние действия (новые сверху):\n" + "\n".join(lines)
+        extra = self._extra_commands.get(command)
+        if extra is not None:
+            return await extra[1]()
         if command.startswith("/"):
-            return (
-                f"Неизвестная команда {command}. Доступны: /new — новый разговор, "
-                "/tools — список инструментов, /audit — журнал действий."
-            )
+            known = [
+                "/new — новый разговор",
+                "/tools — список инструментов",
+                "/audit — журнал действий",
+                *(f"{name} — {descr}" for name, (descr, _) in self._extra_commands.items()),
+            ]
+            return f"Неизвестная команда {command}. Доступны: " + ", ".join(known) + "."
         return None
 
     # ── построение контекста ─────────────────────────────────────────────────
@@ -199,15 +235,21 @@ class AgentOrchestrator:
         messages: list[ChatMessage],
         key: tuple[str, str],
         force_first_tool: bool = False,
+        tool_already_executed: bool = False,
     ) -> AsyncIterator[str]:
         tools = self._registry.openai_schemas()
         shown_any = False
         executed: dict[tuple[str, str], str] = {}  # дедуп повторных одинаковых вызовов
+        # принуждение к инструменту: держится, пока не случится реальный вызов
+        force_pending = force_first_tool
+        forced_retry_used = False
+        any_tool_executed = tool_already_executed
         try:
             for iteration in range(self._config.max_tool_iterations):
-                # required только на первом шаге: дальше модель должна уметь
-                # завершить ответ текстом (если рантайм вообще поддерживает это поле)
-                tool_choice = "required" if force_first_tool and iteration == 0 else None
+                tool_choice = "required" if force_pending else None
+                # на принудительном шаге текст буферизуем: если модель вместо
+                # вызова начнёт сочинять ответ, пользователь его не увидит
+                buffering = force_pending
                 raw_text: list[str] = []
                 tool_calls: list[ToolCall] | None = None
                 async for event in self._gateway.stream(
@@ -215,21 +257,35 @@ class AgentOrchestrator:
                 ):
                     if event.text:
                         raw_text.append(event.text)
-                        cleaned = strip_cjk(event.text)  # языковой барьер
-                        if cleaned:
-                            shown_any = True
-                            yield cleaned
+                        if not buffering:
+                            cleaned = strip_cjk(event.text)  # языковой барьер
+                            if cleaned:
+                                shown_any = True
+                                yield cleaned
                     if event.tool_calls:
                         tool_calls = event.tool_calls
 
+                joined = "".join(raw_text).strip()
                 if not tool_calls:
                     # qwen иногда пишет вызов инструмента JSON-текстом в ответ —
                     # спасаем его как настоящий вызов, а не показываем мусор
-                    joined = "".join(raw_text).strip()
                     salvaged = parse_tool_call_text(joined) if joined else None
                     if salvaged is not None:
                         log.info("text_tool_call_salvaged", tool=salvaged[0].name)
                         tool_calls = salvaged
+                    elif force_pending:
+                        # рантайм проигнорировал tool_choice=required (Ollama так
+                        # делает), модель ответила «из головы» — текст не показываем
+                        if not forced_retry_used:
+                            forced_retry_used = True
+                            log.warning("forced_tool_ignored_retrying")
+                            messages.append(
+                                ChatMessage(role="system", content=FORCE_RETRY_NUDGE)
+                            )
+                            continue
+                        log.error("forced_tool_refused", discarded=joined[:200])
+                        yield FORCED_REFUSAL
+                        return
                     else:
                         if not shown_any:
                             yield (
@@ -238,7 +294,12 @@ class AgentOrchestrator:
                                 if raw_text
                                 else "(модель вернула пустой ответ)"
                             )
+                        elif not any_tool_executed and PATH_MENTION_RE.search(joined):
+                            # ответ называет файлы, хотя инструменты не вызывались
+                            log.warning("path_mention_without_tools")
+                            yield UNVERIFIED_PATH_WARNING
                         return
+                force_pending = False  # реальный вызов состоялся
 
                 log.info(
                     "agent_tool_round",
@@ -289,6 +350,7 @@ class AgentOrchestrator:
                         )
                         return
                     executed[signature] = result.text
+                    any_tool_executed = True
                     messages.append(
                         ChatMessage(role="tool", tool_call_id=call.id, content=result.text)
                     )
@@ -317,5 +379,5 @@ class AgentOrchestrator:
             *pending.messages,
             ChatMessage(role="tool", tool_call_id=pending.call.id, content=result.text),
         ]
-        async for chunk in self._agent_stream(messages, key):
+        async for chunk in self._agent_stream(messages, key, tool_already_executed=True):
             yield chunk

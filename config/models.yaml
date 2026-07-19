@@ -14,3 +14,5 @@ roles:
   chat:       { runtime: ollama, model: "qwen2.5:7b-instruct", temperature: 0.3 }
   extraction: { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.0 }
   summarize:  { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }
+  # мультиязычные эмбеддинги (ру/en) для RAG и памяти; поставить: ollama pull bge-m3
+  embedding:  { runtime: ollama, model: "bge-m3" }

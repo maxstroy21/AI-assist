@@ -67,6 +67,38 @@ MIGRATIONS: list[str] = [
 
     CREATE VIRTUAL TABLE memory_fts USING fts5(subject, content, fact_id UNINDEXED);
     """,
+    """
+    CREATE TABLE rag_files (
+        id           TEXT PRIMARY KEY,
+        path         TEXT NOT NULL UNIQUE,
+        content_hash TEXT,
+        mtime        REAL,
+        size         INTEGER,
+        status       TEXT NOT NULL,     -- pending | indexed | failed
+        error        TEXT,
+        chunk_count  INTEGER NOT NULL DEFAULT 0,
+        indexed_at   TEXT,
+        updated_at   TEXT NOT NULL
+    );
+
+    CREATE TABLE rag_queue (
+        path        TEXT PRIMARY KEY,   -- дедупликация: один файл — одна запись
+        op          TEXT NOT NULL,      -- upsert | delete
+        enqueued_at TEXT NOT NULL,
+        attempts    INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE rag_chunks (
+        id      TEXT PRIMARY KEY,       -- совпадает с id точки в Qdrant
+        file_id TEXT NOT NULL REFERENCES rag_files(id) ON DELETE CASCADE,
+        seq     INTEGER NOT NULL,
+        text    TEXT NOT NULL,
+        locator TEXT NOT NULL           -- «стр. 3», «раздел …», «фрагмент 2»
+    );
+    CREATE INDEX idx_rag_chunks_file ON rag_chunks (file_id);
+
+    CREATE VIRTUAL TABLE rag_chunks_fts USING fts5(text, chunk_id UNINDEXED);
+    """,
 ]
 
 

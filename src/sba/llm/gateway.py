@@ -61,3 +61,9 @@ class LLMGateway(Protocol):
         """Потоковая генерация; tools — модель может их позвать;
         tool_choice='required' — обязана (если рантайм поддерживает)."""
         ...
+
+
+class Embedder(Protocol):
+    """Узкий порт для модулей, которым нужны только эмбеддинги."""
+
+    async def embed(self, texts: list[str]) -> list[list[float]]: ...

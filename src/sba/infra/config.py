@@ -83,8 +83,31 @@ class ChannelsConfig(_Strict):
     telegram: TelegramChannelConfig = TelegramChannelConfig()
 
 
+class RagConfig(_Strict):
+    enabled: bool = True
+    sources: list[Path] = []            # папки с документами (задаются в local.yaml)
+    include_extensions: list[str] = [".pdf", ".docx", ".md", ".txt"]
+    max_file_mb: int = 50
+    scan_interval_minutes: float = 2.0
+    dialog_cooldown_seconds: float = 90.0  # пауза индексации после сообщения в диалоге
+    chunk_chars: int = 1800             # ~450 токенов на фрагмент
+    chunk_overlap_chars: int = 200
+    search_top_k: int = 5
+    snippet_chars: int = 700            # длина цитаты в результате поиска
+    embed_batch: int = 8
+
+    @field_validator("include_extensions")
+    @classmethod
+    def _dotted_lower(cls, v: list[str]) -> list[str]:
+        for ext in v:
+            if not ext.startswith("."):
+                raise ValueError(f"расширение должно начинаться с точки: {ext!r}")
+        return [ext.lower() for ext in v]
+
+
 class ModulesConfig(_Strict):
     memory: ChannelToggle = ChannelToggle(enabled=True)
+    rag: RagConfig = RagConfig()
 
 
 class LLMBehaviorConfig(_Strict):

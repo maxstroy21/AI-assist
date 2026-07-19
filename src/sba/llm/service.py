@@ -69,6 +69,14 @@ class ModelGateway:
         else:
             yield StreamEvent(text=text)
 
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        """Векторы для роли embedding (порт Embedder для RAG и памяти)."""
+        provider, rc = self._resolve("embedding")
+        return await provider.embed(rc.model, texts)
+
+    def has_role(self, role: Role) -> bool:
+        return role in self._config.roles
+
     async def warmup(self) -> None:
         """Держит chat-модель загруженной в RAM: запрос на 1 токен сбрасывает
         таймер выгрузки Ollama (OLLAMA_KEEP_ALIVE, по умолчанию 5 минут).

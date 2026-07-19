@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 
 from sba.infra.db import Database
-from sba.modules.memory.store import MemoryStore, build_fts_query
+from sba.infra.text import build_fts_query
+from sba.modules.memory.store import MemoryStore
 
 
 @pytest.fixture
