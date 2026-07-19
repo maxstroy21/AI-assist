@@ -169,6 +169,32 @@ class MemoryConfig(_Strict):
     # память ищет по словам (FTS, как в Sprint 3), эмбеддинг-модель грузится
     # только под поиск по документам. Поиск по документам от этого не страдает.
     semantic: bool = True
+    # автопамять (Sprint 7): закрытые разговоры фоново сворачиваются в эпизоды,
+    # из них извлекаются факты (роли summarize/extraction). Работает в паузах
+    # диалога, чтобы не конкурировать с ответами за CPU
+    auto_extract: bool = True
+    min_confidence: float = 0.7        # извлечённые факты ниже порога отбрасываются
+    max_facts_per_session: int = 5     # защита от мусора: не больше фактов с разговора
+    check_interval_seconds: float = 600.0   # период поиска неконсолидированных разговоров
+    dialog_cooldown_seconds: float = 90.0   # тишина в диалоге перед LLM-вызовами
+    llm_timeout_seconds: float = 180.0      # таймаут одного LLM-шага консолидации
+
+    @field_validator(
+        "check_interval_seconds", "dialog_cooldown_seconds", "llm_timeout_seconds",
+        "max_facts_per_session",
+    )
+    @classmethod
+    def _positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("значение должно быть > 0")
+        return v
+
+    @field_validator("min_confidence")
+    @classmethod
+    def _unit_range(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("min_confidence должен быть в диапазоне 0–1")
+        return v
 
 
 class ModulesConfig(_Strict):

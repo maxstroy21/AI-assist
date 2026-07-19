@@ -26,6 +26,9 @@ class RememberArgs(BaseModel):
 
 class RecallArgs(BaseModel):
     query: str = Field(description="О чём вспомнить: имя, тема, вопрос")
+    project: str | None = Field(
+        default=None, description="Показать только память названного проекта"
+    )
 
 
 class ForgetArgs(BaseModel):
@@ -40,11 +43,24 @@ def build_memory_tools(service: MemoryService) -> list[ToolSpec]:
 
     async def recall_memory(args: BaseModel) -> str:
         assert isinstance(args, RecallArgs)
-        facts = await service.recall(args.query)
-        if not facts:
-            return f"В памяти ничего не найдено по запросу {args.query!r}."
-        lines = [f"• {format_fact(f)} (записано {f.created_at[:10]})" for f in facts]
-        return "Найдено в памяти:\n" + "\n".join(lines)
+        facts = await service.recall(args.query, project=args.project)
+        episodes = await service.episodes_about(args.query)
+        if not facts and not episodes:
+            scope = f" (проект {args.project!r})" if args.project else ""
+            return f"В памяти ничего не найдено по запросу {args.query!r}{scope}."
+        lines: list[str] = []
+        if facts:
+            lines.append("Найдено в памяти:")
+            for fact in facts:
+                lines.append(f"• {format_fact(fact)} (записано {fact.created_at[:10]})")
+                # история вытесненных решений: виден актуальный + прошлые
+                for old in await service.decision_history(fact):
+                    lines.append(f"   ↳ ранее ({old.created_at[:10]}): {old.content}")
+        if episodes:
+            lines.append("Из прошлых разговоров:")
+            for ep in episodes:
+                lines.append(f"• [{ep.closed_at[:10]}] {ep.summary}")
+        return "\n".join(lines)
 
     async def forget_memory(args: BaseModel) -> str:
         assert isinstance(args, ForgetArgs)
@@ -68,7 +84,8 @@ def build_memory_tools(service: MemoryService) -> list[ToolSpec]:
         ),
         ToolSpec(
             name="recall_memory",
-            description="Найти в долговременной памяти факты по теме или имени",
+            description="Что я знаю о теме или имени: факты из памяти, история "
+            "решений и прошлые разговоры",
             args_schema=RecallArgs,
             risk=RiskLevel.READ,
             module="memory",

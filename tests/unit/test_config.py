@@ -27,6 +27,21 @@ def test_memory_semantic_toggle(tmp_path: Path) -> None:
     assert tuned.modules.memory.enabled is True  # память остаётся, меняется только поиск
 
 
+def test_memory_auto_extract_defaults(tmp_path: Path) -> None:
+    write(tmp_path / "default.yaml", "app:\n  timezone: Europe/Moscow\n")
+    config = load_config(tmp_path, environ={})
+    memory = config.modules.memory
+    assert memory.auto_extract is True
+    assert memory.min_confidence == 0.7
+    assert memory.max_facts_per_session == 5
+
+
+def test_memory_min_confidence_validated(tmp_path: Path) -> None:
+    write(tmp_path / "default.yaml", "modules:\n  memory:\n    min_confidence: 1.5\n")
+    with pytest.raises(ConfigError, match="min_confidence"):
+        load_config(tmp_path, environ={})
+
+
 def test_local_overrides_default(tmp_path: Path) -> None:
     write(tmp_path / "default.yaml", "logging:\n  level: INFO\n")
     write(tmp_path / "local.yaml", "logging:\n  level: DEBUG\n")
