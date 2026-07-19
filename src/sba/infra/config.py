@@ -158,8 +158,17 @@ class RemindersConfig(_Strict):
         return v
 
 
+class MemoryConfig(_Strict):
+    enabled: bool = True
+    # семантический recall памяти держит эмбеддинг-модель (bge-m3) в RAM почти
+    # на каждое сообщение. На машине с дефицитом памяти это дорого: false →
+    # память ищет по словам (FTS, как в Sprint 3), эмбеддинг-модель грузится
+    # только под поиск по документам. Поиск по документам от этого не страдает.
+    semantic: bool = True
+
+
 class ModulesConfig(_Strict):
-    memory: ChannelToggle = ChannelToggle(enabled=True)
+    memory: MemoryConfig = MemoryConfig()
     rag: RagConfig = RagConfig()
     tasks: TasksConfig = TasksConfig()
     scheduler: SchedulerConfig = SchedulerConfig()

@@ -204,10 +204,16 @@ class App:
             memory: MemoryService | None = None
             if config.modules.memory.enabled:
                 # векторный recall памяти включается вместе с RAG (общий Qdrant
-                # и эмбеддер); без него память работает на FTS, как в Sprint 3
+                # и эмбеддер); без него память работает на FTS, как в Sprint 3.
+                # semantic=false снимает эмбеддинг-модель с горячего пути ради
+                # экономии RAM (см. modules.memory.semantic в config)
+                mem_vectors = app.vectors if config.modules.memory.semantic else None
+                mem_embedder = app.gateway if config.modules.memory.semantic else None
                 memory = MemoryService(
-                    MemoryStore(app.db, vectors=app.vectors, embedder=app.gateway)
+                    MemoryStore(app.db, vectors=mem_vectors, embedder=mem_embedder)
                 )
+                if not config.modules.memory.semantic:
+                    log.info("memory_semantic_disabled", reason="config: FTS-only recall")
                 for spec in build_memory_tools(memory):
                     registry.register(spec)
 

@@ -17,6 +17,16 @@ def test_defaults_load(tmp_path: Path) -> None:
     assert config.channels.cli.enabled is True
 
 
+def test_memory_semantic_toggle(tmp_path: Path) -> None:
+    write(tmp_path / "default.yaml", "app:\n  timezone: Europe/Moscow\n")
+    default = load_config(tmp_path, environ={})
+    assert default.modules.memory.semantic is True  # по умолчанию — по смыслу
+    write(tmp_path / "local.yaml", "modules:\n  memory:\n    semantic: false\n")
+    tuned = load_config(tmp_path, environ={})
+    assert tuned.modules.memory.semantic is False
+    assert tuned.modules.memory.enabled is True  # память остаётся, меняется только поиск
+
+
 def test_local_overrides_default(tmp_path: Path) -> None:
     write(tmp_path / "default.yaml", "logging:\n  level: INFO\n")
     write(tmp_path / "local.yaml", "logging:\n  level: DEBUG\n")
