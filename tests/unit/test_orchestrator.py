@@ -382,3 +382,61 @@ async def test_unrelated_message_drops_pending(db: Database) -> None:
     answer = await collect(orchestrator, "какая сегодня дата?")
     assert executed == []          # destructive так и не выполнен
     assert answer == "обычный ответ"
+
+
+# ── принуждение к инструменту на нашей стороне (Ollama игнорирует required) ──
+
+
+async def test_forced_tool_ignored_then_retried(db: Database) -> None:
+    """Модель на «файловом» вопросе ответила текстом → текст скрыт, повтор
+    со строгим втыком → вызов состоялся → нормальный ответ."""
+    executed: list[str] = []
+    llm = FakeLLM(
+        replies=[
+            "Нашёл файл отчёт.docx в Documents (сочинено)",
+            [ToolCall(id="c1", name="probe", arguments={"value": "x"})],
+            "готово по данным",
+        ]
+    )
+    text = await collect(
+        make_orchestrator(llm, db, tools=[probe_spec(executed)]), "найди файл отчёт"
+    )
+    assert executed == ["x"]
+    assert "сочинено" not in text  # выдуманный ответ пользователю не показан
+    assert text.endswith("готово по данным")
+    assert llm.seen_tool_choice[:2] == ["required", "required"]
+    _, second = llm.calls[1]
+    assert second[-1].role == "system"
+    assert "не вызвав инструмент" in second[-1].content
+
+
+async def test_forced_tool_refused_twice_hides_fabrication(db: Database) -> None:
+    llm = FakeLLM(replies=["сочинение раз", "сочинение два"])
+    text = await collect(
+        make_orchestrator(llm, db, tools=[probe_spec([])]), "найди файл отчёт"
+    )
+    assert "сочинение" not in text
+    assert "⚠️" in text and "/new" in text
+
+
+async def test_path_mention_without_tools_gets_audit_warning(db: Database) -> None:
+    """Вне принудительных тем ответ с путями без единого вызова — растяжка."""
+    llm = FakeLLM(replies=["Это лежит в C:\\Users\\x\\доклад.docx — я проверил"])
+    text = await collect(
+        make_orchestrator(llm, db, tools=[probe_spec([])]), "а что по докладу?"
+    )
+    assert "доклад.docx" in text  # ответ показан…
+    assert "/audit" in text  # …но с предупреждением о непроверенности
+
+
+async def test_answer_after_real_tool_call_has_no_warning(db: Database) -> None:
+    llm = FakeLLM(
+        replies=[
+            [ToolCall(id="c1", name="probe", arguments={"value": "x"})],
+            "Файл отчёт.docx найден инструментом",
+        ]
+    )
+    text = await collect(
+        make_orchestrator(llm, db, tools=[probe_spec([])]), "найди файл отчёт"
+    )
+    assert "/audit" not in text  # вызов был настоящим — растяжка молчит
