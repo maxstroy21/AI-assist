@@ -201,6 +201,16 @@ async def test_file_question_gets_tool_nudge(db: Database) -> None:
     assert "инструмент" in messages[-1].content
 
 
+async def test_memory_question_colloquial_phrasing_gets_nudge(db: Database) -> None:
+    # «про X знаешь что-то?» раньше не распознавалось — модель отвечала «из
+    # головы», не заглянув в память (живой отчёт владельца, Sprint 7)
+    llm = FakeLLM(replies=["ок"])
+    await collect(make_orchestrator(llm, db), "про Кузнецова знаешь что-то?")
+    _, messages = llm.calls[0]
+    assert messages[-1].role == "system"
+    assert "recall_memory" in messages[-1].content
+
+
 async def test_smalltalk_gets_no_nudge(db: Database) -> None:
     llm = FakeLLM(replies=["привет!"])
     await collect(make_orchestrator(llm, db), "привет, как дела?")
