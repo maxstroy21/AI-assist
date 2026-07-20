@@ -8,6 +8,9 @@ app:
 logging:
   level: INFO
   format: console        # console | json
+  file: ""               # путь к файлу журнала (плюс к консоли) — удобно для отладки:
+                         # при ошибке пришлёте файл целиком. Пусто = только консоль.
+                         # Пример в local.yaml: file: 'data/logs/sba.log'
 
 session:
   idle_timeout_minutes: 60

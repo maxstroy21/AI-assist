@@ -43,6 +43,9 @@ class AppConfig(_Strict):
 class LoggingConfig(_Strict):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     format: Literal["console", "json"] = "console"
+    # путь к файлу журнала: логи дублируются туда (плюс к консоли), чтобы при
+    # отладке ничего не терялось. Пусто — только консоль. Пример: 'data/logs/sba.log'
+    file: str = ""
 
 
 class SessionConfig(_Strict):
