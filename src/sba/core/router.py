@@ -144,7 +144,21 @@ class Router:
     # ── сессии ────────────────────────────────────────────────────────────────
 
     async def _start_fresh_session(self, msg: IncomingMessage) -> None:
-        """/new: закрыть активный разговор — история больше не попадает в контекст."""
+        """/new: закрыть активный разговор — история больше не попадает в контекст.
+
+        Подтверждение владельцу доставляем ПЕРВЫМ и независимо от закрытия сессии:
+        обратная связь на команду не должна зависеть от фоновой работы —
+        публикация SessionClosed дожидается всех подписчиков (с Sprint 7 среди них
+        консолидатор памяти), и их медленный или падающий обработчик не должен
+        глотать/задерживать «🆕» (урок: служебные ответы обязаны быть мгновенными)."""
+        await self.deliver(
+            OutgoingMessage(
+                user_id=msg.user_id,
+                channel=msg.channel,
+                text="🆕 Начат новый разговор — прошлая история отложена и на ответы "
+                "больше не влияет.",
+            )
+        )
         row = await self._db.fetch_one(
             "SELECT * FROM conversations"
             " WHERE user_id=? AND channel=? AND closed_at IS NULL"
@@ -160,14 +174,6 @@ class Router:
                 last_activity_at=datetime.fromisoformat(row["last_activity_at"]),
             )
             await self._close_session(session, utcnow())
-        await self.deliver(
-            OutgoingMessage(
-                user_id=msg.user_id,
-                channel=msg.channel,
-                text="🆕 Начат новый разговор — прошлая история отложена и на ответы "
-                "больше не влияет.",
-            )
-        )
 
     async def _get_or_create_session(self, msg: IncomingMessage) -> Session:
         row = await self._db.fetch_one(

@@ -121,6 +121,39 @@ async def test_new_command_closes_session(db: Database) -> None:
     assert all("/new" != r["content"] for r in rows)
 
 
+async def test_new_confirmation_delivered_before_session_closed_fanout(
+    db: Database,
+) -> None:
+    """Подтверждение «🆕» не должно зависеть от подписчиков SessionClosed:
+    с Sprint 7 на это событие подписан консолидатор памяти, и его медленный
+    (или падающий) обработчик не имеет права глотать/задерживать обратную связь
+    на /new. Проверяем порядок: к моменту работы подписчика подтверждение уже
+    доставлено."""
+    bus = EventBus()
+    channel = CollectingChannel()
+    seen_before_fanout: list[bool] = []
+
+    async def subscriber(event: SessionClosed) -> None:
+        # к этому моменту подтверждение уже должно быть в канале
+        seen_before_fanout.append(
+            any("новый разговор" in m.text.lower() for m in channel.sent)
+        )
+        raise RuntimeError("а ещё подписчик может упасть — и это не помешает")
+
+    bus.subscribe(SessionClosed, subscriber)
+    router = make_router(db, bus=bus)
+    router.register_channel(channel)
+
+    await router.handle_incoming(IncomingMessage(user_id="u1", channel="cli", text="раз"))
+    await router.handle_incoming(IncomingMessage(user_id="u1", channel="cli", text="/new"))
+
+    assert seen_before_fanout == [True]  # доставлено ДО фан-аута SessionClosed
+    assert any("новый разговор" in m.text.lower() for m in channel.sent)
+    # закрытие сессии всё равно выполнено (это фоновая бухгалтерия, но не теряется)
+    conversations = await db.fetch_all("SELECT closed_at FROM conversations")
+    assert all(r["closed_at"] is not None for r in conversations)
+
+
 async def test_slash_commands_not_persisted(db: Database) -> None:
     router = make_router(db)
     channel = CollectingChannel()
