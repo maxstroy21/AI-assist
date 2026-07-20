@@ -92,7 +92,7 @@ class App:
     @classmethod
     async def create(cls, config_dir: Path) -> App:
         config = load_config(config_dir)
-        setup_logging(config.logging.level, config.logging.format)
+        setup_logging(config.logging.level, config.logging.format, config.logging.file)
         log.info("app_starting", version=__version__, data_dir=str(config.app.data_dir))
 
         app = cls(config)
