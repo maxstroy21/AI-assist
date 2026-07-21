@@ -44,3 +44,26 @@ def test_missing_file(tmp_path: Path) -> None:
 def test_repo_models_yaml_is_valid() -> None:
     config = load_models_config(Path(__file__).parents[2] / "config" / "models.yaml")
     assert config.roles["chat"].runtime == "ollama"
+
+
+def test_anthropic_runtime_needs_no_base_url(tmp_path: Path) -> None:
+    text = """
+runtimes:
+  cloud: {kind: anthropic}
+roles:
+  chat: {runtime: cloud, model: "claude-sonnet-5", max_tokens: 4096}
+"""
+    config = load_models_config(write(tmp_path, text))
+    assert config.runtimes["cloud"].kind == "anthropic"
+    assert config.roles["chat"].max_tokens == 4096
+
+
+def test_openai_runtime_requires_base_url(tmp_path: Path) -> None:
+    text = """
+runtimes:
+  ollama: {kind: openai_compatible}
+roles:
+  chat: {runtime: ollama, model: "qwen2.5:7b-instruct"}
+"""
+    with pytest.raises(ConfigError, match="base_url"):
+        load_models_config(write(tmp_path, text))

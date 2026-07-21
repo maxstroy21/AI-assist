@@ -16,15 +16,27 @@ class _Strict(BaseModel):
 
 
 class RuntimeConfig(_Strict):
-    kind: Literal["openai_compatible"]
-    base_url: str
+    # openai_compatible — Ollama/LM Studio и т.п. (base_url обязателен);
+    # anthropic — облачный Claude через официальный SDK (base_url не нужен,
+    # авторизация — ключ ANTHROPIC_API_KEY или вход `ant auth login` под аккаунтом)
+    kind: Literal["openai_compatible", "anthropic"]
+    base_url: str = ""
     api_key: str = ""
+
+    @model_validator(mode="after")
+    def _base_url_for_openai(self) -> RuntimeConfig:
+        if self.kind == "openai_compatible" and not self.base_url:
+            raise ValueError("base_url обязателен для kind=openai_compatible")
+        return self
 
 
 class RoleConfig(_Strict):
     runtime: str
     model: str
     temperature: float | None = None
+    # потолок токенов ответа. Anthropic требует его явно (провайдер подставит
+    # 4096, если не задан); для openai_compatible None = «дефолт модели»
+    max_tokens: int | None = None
     # native — модель умеет tool calling сама; json — инструкция в промпте
     # и разбор JSON-ответа (страховка для моделей без tool calling)
     tool_mode: Literal["native", "json"] = "native"
