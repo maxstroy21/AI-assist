@@ -200,12 +200,41 @@ class MemoryConfig(_Strict):
         return v
 
 
+class FileOpsConfig(_Strict):
+    enabled: bool = True
+    # false — СУХОЙ ПРОГОН (защита самого опасного функционала, риск Sprint 8):
+    # операции move/copy/rename/archive только планируются и журналируются,
+    # файловая система не меняется. Включать в local.yaml после недели проверки
+    # планов владельцем. Поиск дубликатов/версий — только чтение, работает всегда
+    execute: bool = False
+    archive_subdir: str = "_архив"   # подпапка архива внутри разбираемой папки
+    max_batch_files: int = 200       # потолок файлов одной операции архивирования
+    scan_limit_files: int = 20_000   # потолок обхода при поиске дубликатов/версий
+    time_budget_seconds: float = 30.0  # бюджет времени одного сканирования
+    max_groups: int = 10             # сколько групп дубликатов/версий показывать
+
+    @field_validator("max_batch_files", "scan_limit_files", "time_budget_seconds", "max_groups")
+    @classmethod
+    def _positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("значение должно быть > 0")
+        return v
+
+    @field_validator("archive_subdir")
+    @classmethod
+    def _plain_name(cls, v: str) -> str:
+        if not v.strip() or "/" in v or "\\" in v or v in {".", ".."}:
+            raise ValueError("archive_subdir должен быть простым именем папки")
+        return v.strip()
+
+
 class ModulesConfig(_Strict):
     memory: MemoryConfig = MemoryConfig()
     rag: RagConfig = RagConfig()
     tasks: TasksConfig = TasksConfig()
     scheduler: SchedulerConfig = SchedulerConfig()
     reminders: RemindersConfig = RemindersConfig()
+    fileops: FileOpsConfig = FileOpsConfig()
 
 
 class LLMBehaviorConfig(_Strict):

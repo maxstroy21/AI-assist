@@ -185,6 +185,29 @@ MIGRATIONS: list[str] = [
         facts_added     INTEGER NOT NULL DEFAULT 0
     );
     """,
+    """
+    CREATE TABLE file_ops_batches (
+        id          TEXT PRIMARY KEY,
+        kind        TEXT NOT NULL,       -- move | copy | rename | archive | undo
+        dry_run     INTEGER NOT NULL,    -- 1 — сухой прогон: только план, без исполнения
+        description TEXT NOT NULL,
+        undo_of     TEXT,                -- id батча, отменённого этим (kind='undo')
+        created_at  TEXT NOT NULL,
+        undone_at   TEXT
+    );
+
+    CREATE TABLE file_ops_entries (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        batch_id TEXT NOT NULL REFERENCES file_ops_batches(id),
+        seq      INTEGER NOT NULL,
+        op       TEXT NOT NULL,          -- move | copy | trash (rename/archive → move)
+        src      TEXT NOT NULL,
+        dst      TEXT NOT NULL,
+        executed INTEGER NOT NULL DEFAULT 0,
+        error    TEXT
+    );
+    CREATE INDEX idx_file_ops_entries_batch ON file_ops_entries (batch_id, seq);
+    """,
 ]
 
 

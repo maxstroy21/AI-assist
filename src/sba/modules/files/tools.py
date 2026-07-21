@@ -1,10 +1,12 @@
-"""Файловые инструменты v1: список, чтение текстовых файлов, удаление в корзину.
+"""Файловые инструменты: чтение (список, поиск, чтение файлов) и операции
+File Ops (Sprint 8: переместить/скопировать/переименовать/архив, дубликаты,
+старые версии, undo).
 
 Безопасность (FR-6.5, FR-9.5): работа строго внутри whitelisted-корней из
-конфига (files.allowed_roots); пути наружу отклоняются после resolve()
-(защита от .. и симлинков). Удаление — destructive: в корзину ОС
-(send2trash) и только после подтверждения пользователя.
-Полноценный File Ops (перемещение, дубликаты, undo) — Sprint 8.
+конфига (files.allowed_roots, RootGuard); пути наружу отклоняются после
+resolve() (защита от .. и симлинков). Удаление — destructive: в корзину ОС
+(send2trash) и только после подтверждения пользователя. Операции File Ops
+по умолчанию идут в режиме сухого прогона (см. ops.py).
 """
 
 from __future__ import annotations
@@ -21,16 +23,12 @@ from send2trash import send2trash
 
 from sba.core.tools.spec import RiskLevel, ToolSpec
 from sba.infra.config import FilesConfig
+from sba.modules.files.ops import FileOpsService
+from sba.modules.files.safety import NO_ROOTS_HINT, RootGuard
 
 SCAN_LIMIT = 50_000  # предохранитель от обхода гигантских деревьев
 FIND_MAX_MATCHES = 30
 SEARCH_TIME_BUDGET = 20.0  # секунд: OneDrive/сетевые папки перечисляются медленно
-
-NO_ROOTS_HINT = (
-    "Файловые инструменты не настроены: список разрешённых папок пуст. "
-    "Попросите владельца добавить в config/local.yaml:\n"
-    "files:\n  allowed_roots: ['C:\\Users\\имя\\Documents']"
-)
 
 
 class PathArgs(BaseModel):
@@ -51,32 +49,16 @@ class FindArgs(BaseModel):
 class FilesToolset:
     def __init__(self, config: FilesConfig) -> None:
         self._config = config
-        self._roots = [Path(r).expanduser().resolve() for r in config.allowed_roots]
+        self._guard = RootGuard(config.allowed_roots)
+        self._roots = self._guard.roots
 
-    # ── безопасность путей ───────────────────────────────────────────────────
+    # ── безопасность путей (RootGuard, общий с файловыми операциями) ─────────
 
     def _roots_summary(self) -> str:
-        return ", ".join(str(r) for r in self._roots)
+        return self._guard.summary()
 
     def _resolve(self, raw: str) -> Path:
-        if not self._roots:
-            raise ValueError(NO_ROOTS_HINT)
-        cleaned = raw.strip().strip("'\"")
-        # «Downloads» должно означать сам разрешённый корень с таким именем,
-        # а не подпапку Downloads внутри корней
-        for root in self._roots:
-            if cleaned.rstrip("\\/").lower() in (root.name.lower(), str(root).lower()):
-                return root
-        path = Path(cleaned).expanduser()
-        candidates = [path] if path.is_absolute() else [root / path for root in self._roots]
-        for candidate in candidates:
-            resolved = candidate.resolve()
-            if any(resolved.is_relative_to(root) for root in self._roots):
-                if resolved.exists() or candidate is candidates[-1]:
-                    return resolved
-        raise ValueError(
-            f"путь {raw!r} вне разрешённых папок. Разрешены: {self._roots_summary()}"
-        )
+        return self._guard.resolve(raw)
 
     # ── инструменты ──────────────────────────────────────────────────────────
 
@@ -258,3 +240,147 @@ class FilesToolset:
                 handler=self.delete_file,  # type: ignore[arg-type]
             ),
         ]
+
+
+# ── File Ops (Sprint 8): операции с undo-журналом и анализ ───────────────────
+
+
+class MoveArgs(BaseModel):
+    src: str = Field(description="Что переместить: путь к файлу или папке")
+    dst_dir: str = Field(
+        description="Куда: папка назначения (создастся, если её ещё нет)"
+    )
+
+
+class CopyArgs(BaseModel):
+    src: str = Field(description="Какой файл скопировать")
+    dst_dir: str = Field(description="Куда: папка назначения")
+
+
+class RenameArgs(BaseModel):
+    path: str = Field(description="Файл или папка, которую переименовать")
+    new_name: str = Field(
+        description="Новое имя без пути, например: отчёт-2026.docx"
+    )
+
+
+class ArchiveArgs(BaseModel):
+    folder: str = Field(description="Папка, файлы из которой убрать в архив")
+    pattern: str = Field(default="*", description="Маска файлов, например *.pdf; * — все")
+    older_than_days: int = Field(
+        default=0, ge=0, description="Брать только файлы старше N дней; 0 — любые"
+    )
+
+
+class ScanArgs(BaseModel):
+    path: str = Field(
+        default="", description="Папка для проверки; пусто — все разрешённые папки"
+    )
+
+
+class UndoArgs(BaseModel):
+    pass
+
+
+def build_fileops_tools(service: FileOpsService) -> list[ToolSpec]:
+    async def move_file(args: BaseModel) -> str:
+        assert isinstance(args, MoveArgs)
+        return await service.move(args.src, args.dst_dir)
+
+    async def copy_file(args: BaseModel) -> str:
+        assert isinstance(args, CopyArgs)
+        return await service.copy(args.src, args.dst_dir)
+
+    async def rename_file(args: BaseModel) -> str:
+        assert isinstance(args, RenameArgs)
+        return await service.rename(args.path, args.new_name)
+
+    async def archive_files(args: BaseModel) -> str:
+        assert isinstance(args, ArchiveArgs)
+        return await service.archive(args.folder, args.pattern, args.older_than_days)
+
+    async def find_duplicates(args: BaseModel) -> str:
+        assert isinstance(args, ScanArgs)
+        return await service.duplicates_text(args.path)
+
+    async def find_old_versions(args: BaseModel) -> str:
+        assert isinstance(args, ScanArgs)
+        return await service.old_versions_text(args.path)
+
+    async def undo_file_operation(args: BaseModel) -> str:
+        assert isinstance(args, UndoArgs)
+        return await service.undo_last()
+
+    # в сухом прогоне операции ничего не меняют (только план) — риск write,
+    # чтобы не спрашивать подтверждение на безвредный план; в боевом режиме
+    # массовое архивирование — destructive (docs/04 §11), одиночные операции
+    # обратимы через undo и не перезаписывают — write (ADR-10)
+    dry = not service.executes
+    mode_note = (
+        " Сейчас режим сухого прогона: составляется только план, файлы не меняются."
+        if dry
+        else " Без перезаписи; отменить можно через undo_file_operation."
+    )
+    return [
+        ToolSpec(
+            name="move_file",
+            description="Переместить файл или папку в другую папку." + mode_note,
+            args_schema=MoveArgs,
+            risk=RiskLevel.WRITE,
+            module="files",
+            handler=move_file,
+        ),
+        ToolSpec(
+            name="copy_file",
+            description="Скопировать файл в другую папку." + mode_note,
+            args_schema=CopyArgs,
+            risk=RiskLevel.WRITE,
+            module="files",
+            handler=copy_file,
+        ),
+        ToolSpec(
+            name="rename_file",
+            description="Переименовать файл или папку (имя меняется, папка та же)."
+            + mode_note,
+            args_schema=RenameArgs,
+            risk=RiskLevel.WRITE,
+            module="files",
+            handler=rename_file,
+        ),
+        ToolSpec(
+            name="archive_files",
+            description="Убрать файлы папки в её подпапку-архив (по маске и/или "
+            "старше N дней)." + mode_note,
+            args_schema=ArchiveArgs,
+            risk=RiskLevel.WRITE if dry else RiskLevel.DESTRUCTIVE,
+            module="files",
+            handler=archive_files,
+        ),
+        ToolSpec(
+            name="find_duplicates",
+            description="Найти побайтово одинаковые файлы (дубликаты) и показать, "
+            "сколько места они занимают",
+            args_schema=ScanArgs,
+            risk=RiskLevel.READ,
+            module="files",
+            handler=find_duplicates,
+        ),
+        ToolSpec(
+            name="find_old_versions",
+            description="Найти старые версии документов по похожим именам "
+            "(_v2, (1), копия, даты) и датам изменения",
+            args_schema=ScanArgs,
+            risk=RiskLevel.READ,
+            module="files",
+            handler=find_old_versions,
+        ),
+        ToolSpec(
+            name="undo_file_operation",
+            description="Откатить последнюю выполненную файловую операцию "
+            "(перемещение/копирование/переименование/архив)",
+            args_schema=UndoArgs,
+            risk=RiskLevel.WRITE,
+            module="files",
+            handler=undo_file_operation,
+        ),
+    ]

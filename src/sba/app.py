@@ -32,7 +32,10 @@ from sba.infra.vectors import VectorStore
 from sba.llm.config import load_models_config
 from sba.llm.service import ModelGateway
 from sba.modules.basic.tools import build_tools as build_basic_tools
-from sba.modules.files.tools import FilesToolset
+from sba.modules.files.ops import FileOpsService
+from sba.modules.files.opsstore import FileOpsStore
+from sba.modules.files.safety import RootGuard
+from sba.modules.files.tools import FilesToolset, build_fileops_tools
 from sba.modules.indexer.service import IndexerService
 from sba.modules.indexer.store import CatalogStore
 from sba.modules.memory.consolidation import MemoryConsolidator
@@ -108,6 +111,22 @@ class App:
                 registry.register(spec)
             for spec in FilesToolset(config.files).build_tools():
                 registry.register(spec)
+
+            # File Ops (Sprint 8): операции с undo-журналом; по умолчанию —
+            # сухой прогон (только планы), см. modules.fileops.execute
+            fileops: FileOpsService | None = None
+            fileops_cfg = config.modules.fileops
+            if fileops_cfg.enabled:
+                fileops = FileOpsService(
+                    FileOpsStore(app.db),
+                    RootGuard(config.files.allowed_roots),
+                    fileops_cfg,
+                )
+                if not fileops_cfg.execute:
+                    log.info("fileops_dry_run_mode", hint="планы без исполнения")
+                for spec in build_fileops_tools(fileops):
+                    registry.register(spec)
+
             app.gateway = ModelGateway(load_models_config(config_dir / "models.yaml"))
 
             rag_cfg = config.modules.rag
@@ -257,7 +276,7 @@ class App:
                 config=config.agent,
                 timezone=config.app.timezone,
                 memory=memory,
-                extra_commands=app._build_extra_commands(rag_service, tasks, memory),
+                extra_commands=app._build_extra_commands(rag_service, tasks, memory, fileops),
             )
 
             if app.indexer is not None:
@@ -314,6 +333,7 @@ class App:
         rag_service: RAGService | None,
         tasks: TasksService | None,
         memory: MemoryService | None = None,
+        fileops: FileOpsService | None = None,
     ) -> dict[str, tuple[str, Callable[[], Awaitable[str]]]]:
         """Сервис-команды модулей для оркестратора (инъекция: ядро не знает модулей)."""
         commands: dict[str, tuple[str, Callable[[], Awaitable[str]]]] = {}
@@ -324,6 +344,9 @@ class App:
         if memory is not None:
             # ручная ревизия автопамяти (риск Sprint 7): видно, что запомнилось
             commands["/memory"] = ("что запомнено за неделю", memory.review_text)
+        if fileops is not None:
+            # ревизия сухого прогона (риск Sprint 8): режим и журнал операций
+            commands["/fileops"] = ("журнал файловых операций", fileops.overview_text)
         if self.indexer is not None and rag_service is not None:
             indexer, rag = self.indexer, rag_service
 
