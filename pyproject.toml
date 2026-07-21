@@ -20,6 +20,7 @@ dependencies = [
     "pypdf>=4.2",  # извлечение текста из PDF (чистый Python; OCR — Sprint 8)
     "python-docx>=1.1",  # извлечение текста из DOCX
     "python-dateutil>=2.9",  # RRULE: валидация и вычисление следующего срабатывания
+    "anthropic>=0.40",  # облачный провайдер Claude (роль chat под аккаунтом владельца)
 ]
 
 [project.optional-dependencies]
@@ -65,6 +66,14 @@ disallow_untyped_defs = false
 [[tool.mypy.overrides]]
 module = "send2trash.*"
 ignore_missing_imports = true
+
+# SDK Anthropic: события стрима — сложные union-типы; в strict-режиме доступ к их
+# полям тонет в проверках. Провайдер обращается к ним по документированной форме,
+# поэтому трактуем модуль как нетипизированный (как send2trash выше)
+[[tool.mypy.overrides]]
+module = "anthropic.*"
+ignore_missing_imports = true
+follow_imports = "skip"
 
 # ── Границы модулей (архитектура: docs/03-project-structure.md) ──────────────
 [tool.importlinter]

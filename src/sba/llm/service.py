@@ -10,30 +10,37 @@ from collections.abc import AsyncIterator
 
 import structlog
 
-from sba.llm.config import ModelsConfig, RoleConfig
+from sba.llm.config import ModelsConfig, RoleConfig, RuntimeConfig
 from sba.llm.gateway import (
     ChatMessage,
     ChatResult,
     LLMError,
+    Provider,
     Role,
     StreamEvent,
     ToolSchema,
 )
+from sba.llm.providers.anthropic_native import AnthropicProvider
 from sba.llm.providers.openai_compat import OpenAICompatProvider
 from sba.llm.toolcalling import inject_tools_instruction, parse_tool_call_text
 
 log = structlog.get_logger(__name__)
 
 
+def _build_provider(rt: RuntimeConfig) -> Provider:
+    if rt.kind == "anthropic":
+        return AnthropicProvider(rt.api_key)
+    return OpenAICompatProvider(rt.base_url, rt.api_key)
+
+
 class ModelGateway:
     def __init__(self, config: ModelsConfig) -> None:
         self._config = config
-        self._providers: dict[str, OpenAICompatProvider] = {
-            name: OpenAICompatProvider(rt.base_url, rt.api_key)
-            for name, rt in config.runtimes.items()
+        self._providers: dict[str, Provider] = {
+            name: _build_provider(rt) for name, rt in config.runtimes.items()
         }
 
-    def _resolve(self, role: Role) -> tuple[OpenAICompatProvider, RoleConfig]:
+    def _resolve(self, role: Role) -> tuple[Provider, RoleConfig]:
         role_config = self._config.roles.get(role)
         if role_config is None:
             raise LLMError(f"роль {role!r} не настроена в models.yaml")
@@ -41,7 +48,7 @@ class ModelGateway:
 
     async def chat(self, role: Role, messages: list[ChatMessage]) -> ChatResult:
         provider, rc = self._resolve(role)
-        return await provider.chat(rc.model, messages, rc.temperature)
+        return await provider.chat(rc.model, messages, rc.temperature, max_tokens=rc.max_tokens)
 
     async def stream(
         self,
@@ -53,14 +60,17 @@ class ModelGateway:
         provider, rc = self._resolve(role)
         if not tools or rc.tool_mode == "native":
             async for event in provider.stream(
-                rc.model, messages, rc.temperature, tools=tools, tool_choice=tool_choice
+                rc.model, messages, rc.temperature, tools=tools,
+                tool_choice=tool_choice, max_tokens=rc.max_tokens,
             ):
                 yield event
             return
         # json-fallback: буферизуем ответ целиком и решаем, вызов это или текст
         prepared = inject_tools_instruction(messages, tools)
         parts: list[str] = []
-        async for event in provider.stream(rc.model, prepared, rc.temperature):
+        async for event in provider.stream(
+            rc.model, prepared, rc.temperature, max_tokens=rc.max_tokens
+        ):
             parts.append(event.text)
         text = "".join(parts)
         calls = parse_tool_call_text(text)

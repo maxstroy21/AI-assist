@@ -8,10 +8,21 @@ runtimes:
     base_url: http://localhost:11434/v1
     api_key: ""              # Ollama не требует ключа
 
+  # Облачный Claude (роль chat под аккаунтом владельца). Включается вручную:
+  # раскомментируйте рантайм ниже и переназначьте на него роль chat.
+  # Авторизация — вход `ant auth login` (профиль на диске, SDK берёт его сам);
+  # api_key оставить пустым (файл в git — секреты сюда не писать). У Anthropic
+  # нет эмбеддингов, поэтому роль embedding обязана остаться на ollama.
+  # anthropic:
+  #   kind: anthropic
+  #   api_key: ""            # пусто = учётка из окружения / `ant auth login`
+
 roles:
   # temperature 0.3: у qwen2.5 7B выше температура = чаще вставки на других
   # языках и, главное, выдуманные списки файлов вместо вызова инструмента.
   chat:       { runtime: ollama, model: "qwen2.5:7b-instruct", temperature: 0.3 }
+  # Облачный Claude вместо локальной модели (раскомментируйте anthropic-рантайм выше):
+  # chat:     { runtime: anthropic, model: "claude-sonnet-5", max_tokens: 4096 }
   extraction: { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.0 }
   summarize:  { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }
   # мультиязычные эмбеддинги (ру/en) для RAG и памяти; поставить: ollama pull bge-m3

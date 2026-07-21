@@ -170,9 +170,11 @@ class OpenAICompatProvider:
         temperature: float | None = None,
         tools: list[ToolSchema] | None = None,
         tool_choice: str | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[StreamEvent]:
         payload = self._payload(
-            model, messages, temperature, stream=True, tools=tools, tool_choice=tool_choice
+            model, messages, temperature, stream=True, tools=tools,
+            tool_choice=tool_choice, max_tokens=max_tokens,
         )
         last_error: Exception | None = None
         for attempt in range(RETRIES):

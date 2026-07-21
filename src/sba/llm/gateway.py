@@ -67,3 +67,30 @@ class Embedder(Protocol):
     """Узкий порт для модулей, которым нужны только эмбеддинги."""
 
     async def embed(self, texts: list[str]) -> list[list[float]]: ...
+
+
+class Provider(Protocol):
+    """Рантайм-провайдер (Ollama, Anthropic и т.п.): единый контракт для
+    ModelGateway. Роль → (провайдер, модель, параметры) назначается в models.yaml."""
+
+    async def chat(
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> ChatResult: ...
+
+    def stream(
+        self,
+        model: str,
+        messages: list[ChatMessage],
+        temperature: float | None = None,
+        tools: list[ToolSchema] | None = None,
+        tool_choice: str | None = None,
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[StreamEvent]: ...
+
+    async def embed(self, model: str, texts: list[str]) -> list[list[float]]: ...
+
+    async def aclose(self) -> None: ...
