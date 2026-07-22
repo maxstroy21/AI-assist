@@ -36,7 +36,10 @@ SYSTEM_PROMPT_PATH = Path(__file__).parent / "prompts" / "system.md"
 
 CONFIRM_WORDS = {"да", "yes", "ок", "ok", "окей", "подтверждаю", "давай", "+"}
 CANCEL_WORDS = {"нет", "no", "отмена", "отменить", "cancel", "стоп"}
-PENDING_TTL_SECONDS = 300.0
+# 15 минут: человек в Telegram отвечает «да» не сразу (отлучился, отвлёкся);
+# 5 минут оказалось мало (живая проверка Sprint 8). Позже этого срок истекает,
+# и «да» получает честный отказ, а не выполнение забытого действия
+PENDING_TTL_SECONDS = 900.0
 
 # Маленькие модели пропускают вызов инструмента и отвечают «по памяти»,
 # особенно если в истории уже есть их прошлый (возможно выдуманный) ответ.
@@ -198,15 +201,27 @@ class AgentOrchestrator:
 
         key = (msg.user_id, msg.channel)
         pending = self._pending.pop(key, None)
-        if pending is not None and not pending.expired:
+        if pending is not None:
             answer = _normalize_answer(msg.text)
-            if answer in CONFIRM_WORDS:
+            if pending.expired:
+                # «да»/«нет» спустя время: подтверждать нечего. Но НЕ отдаём это
+                # модели — иначе слабая модель сочинит «готово» (живая проверка
+                # Sprint 8). Честно говорим, что срок истёк и ничего не сделано.
+                if answer in CONFIRM_WORDS or answer in CANCEL_WORDS:
+                    log.info("destructive_expired", tool=pending.call.name)
+                    return (
+                        "⌛ Срок подтверждения истёк — действие НЕ выполнено. "
+                        "Повторите запрос, если он ещё нужен."
+                    )
+                log.info("destructive_expired_dropped", tool=pending.call.name)
+            elif answer in CONFIRM_WORDS:
                 return self._confirmed_stream(pending, key)
-            if answer in CANCEL_WORDS:
+            elif answer in CANCEL_WORDS:
                 log.info("destructive_cancelled", tool=pending.call.name)
                 return "🚫 Действие отменено."
-            # другое сообщение = молчаливая отмена, обрабатываем как обычно
-            log.info("destructive_dropped", tool=pending.call.name)
+            else:
+                # другое сообщение = молчаливая отмена, обрабатываем как обычно
+                log.info("destructive_dropped", tool=pending.call.name)
 
         lowered = msg.text.lower()
         nudges: list[str] = []
