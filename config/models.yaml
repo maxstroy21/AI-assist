@@ -27,9 +27,10 @@ runtimes:
   #   api_key: "${DEEPSEEK_API_KEY}"
 
 roles:
-  # temperature 0.3: у qwen2.5 7B выше температура = чаще вставки на других
-  # языках и, главное, выдуманные списки файлов вместо вызова инструмента.
-  chat:       { runtime: ollama, model: "qwen2.5:7b-instruct", temperature: 0.3 }
+  # 3b по умолчанию: на слабом CPU-only железе владельца (i7-1165G7 / 16 ГБ) 7B
+  # слишком тяжела и упирается в таймауты (docs/06 §Sprint 6). temperature 0.3:
+  # выше — чаще вставки на других языках и выдуманные списки файлов.
+  chat:       { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }
   # Облачная модель вместо локальной (раскомментируйте нужный рантайм выше и
   # оставьте ОДНУ строку chat):
   # chat:     { runtime: anthropic, model: "claude-sonnet-5", max_tokens: 4096 }
