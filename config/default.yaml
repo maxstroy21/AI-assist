@@ -46,7 +46,7 @@ modules:
     # Папки с документами для индексации — задать в local.yaml. Windows-пути
     # В ОДИНАРНЫХ кавычках: sources: ['C:\Users\mmirosh\Documents']
     sources: []
-    include_extensions: [".pdf", ".docx", ".md", ".txt"]
+    include_extensions: [".pdf", ".docx", ".md", ".txt", ".xlsx", ".xlsm"]
     max_file_mb: 50            # файлы крупнее пропускаются (с записью в лог)
     scan_interval_minutes: 2   # период поиска новых/изменённых файлов
     dialog_cooldown_seconds: 90  # пауза индексации после сообщения в диалоге
