@@ -401,7 +401,32 @@ async def test_destructive_asks_confirmation_and_executes_on_yes(db: Database) -
 
     answer = await collect(orchestrator, "да")
     assert executed == ["файл.txt"]
-    assert answer.endswith("Удалил файл.txt")
+    # после подтверждения показываем результат инструмента напрямую и
+    # останавливаемся — БЕЗ нового прохода LLM (иначе слабая модель срывается)
+    assert "результат:файл.txt" in answer
+    assert answer.startswith("✅")
+
+
+async def test_confirmed_action_does_not_run_another_llm_round(db: Database) -> None:
+    """Регрессия (живая проверка Sprint 8): после «да» слабая модель не должна
+    получать новый круг agent-loop — иначе она вызывает выдуманные инструменты."""
+    executed: list[str] = []
+    # второй ответ модели — ловушка: если после подтверждения снова дёрнуть LLM,
+    # выполнится левый вызов и попадёт в executed
+    llm = FakeLLM(
+        replies=[
+            [ToolCall(id="c1", name="probe", arguments={"value": "нужный"})],
+            [ToolCall(id="c2", name="probe", arguments={"value": "выдуманный"})],
+        ]
+    )
+    orchestrator = make_orchestrator(
+        llm, db, tools=[probe_spec(executed, risk=RiskLevel.DESTRUCTIVE)]
+    )
+
+    await collect(orchestrator, "удали")
+    answer = await collect(orchestrator, "да")
+    assert executed == ["нужный"]  # ровно один вызов, «выдуманный» не выполнился
+    assert "выдуманный" not in answer
 
 
 async def test_destructive_cancelled_on_no(db: Database) -> None:
