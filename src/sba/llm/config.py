@@ -2,13 +2,41 @@
 
 from __future__ import annotations
 
+import os
+import re
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from sba.infra.config import ConfigError
+
+# подстановка секретов из окружения: ${ИМЯ} в значениях models.yaml → значение
+# переменной. Так ключ облачного провайдера не попадает в git-файл (лежит в env
+# владельца). Работаем по разобранной структуре — ссылки в комментариях игнорируются
+_ENV_REF = re.compile(r"\$\{(\w+)\}")
+
+
+def _expand_env(node: Any) -> Any:
+    if isinstance(node, str):
+        def repl(match: re.Match[str]) -> str:
+            name = match.group(1)
+            value = os.environ.get(name)
+            if value is None:
+                raise ConfigError(
+                    f"config/models.yaml ссылается на переменную окружения {name}, "
+                    f"но она не задана. Задайте её (Windows: setx {name} \"ваш_ключ\", "
+                    "затем перезапустите PowerShell) или уберите ссылку из файла"
+                )
+            return value
+
+        return _ENV_REF.sub(repl, node)
+    if isinstance(node, dict):
+        return {key: _expand_env(value) for key, value in node.items()}
+    if isinstance(node, list):
+        return [_expand_env(item) for item in node]
+    return node
 
 
 class _Strict(BaseModel):
@@ -64,7 +92,7 @@ def load_models_config(path: Path) -> ModelsConfig:
             f"не найден {path} — файл ролей моделей обязателен при agent.processor=llm"
         )
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        data = _expand_env(yaml.safe_load(path.read_text(encoding="utf-8")))
         return ModelsConfig.model_validate(data)
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path}: некорректный YAML: {exc}") from exc

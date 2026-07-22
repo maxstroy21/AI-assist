@@ -298,7 +298,6 @@ class AgentOrchestrator:
         messages: list[ChatMessage],
         key: tuple[str, str],
         force_first_tool: bool = False,
-        tool_already_executed: bool = False,
         allowed_modules: set[str] | None = None,
     ) -> AsyncIterator[str]:
         tools = self._registry.openai_schemas(allowed_modules)
@@ -307,7 +306,7 @@ class AgentOrchestrator:
         # принуждение к инструменту: держится, пока не случится реальный вызов
         force_pending = force_first_tool
         forced_retry_used = False
-        any_tool_executed = tool_already_executed
+        any_tool_executed = False
         try:
             for iteration in range(self._config.max_tool_iterations):
                 tool_choice = "required" if force_pending else None
@@ -442,10 +441,10 @@ class AgentOrchestrator:
     async def _confirmed_stream(
         self, pending: PendingAction, key: tuple[str, str]
     ) -> AsyncIterator[str]:
+        # Опасное действие пользователь одобрил явно — исполняем и СРАЗУ показываем
+        # результат, не пуская модель в новый круг agent-loop. Живая проверка
+        # Sprint 8: слабая 3B/7B после подтверждения срывалась на выдуманные вызовы
+        # с пустыми аргументами и «воду»; крутить ещё проход LLM тут незачем —
+        # результат инструмента уже готов к показу пользователю.
         result = await self._registry.execute(pending.call, confirmed=True)
-        messages = [
-            *pending.messages,
-            ChatMessage(role="tool", tool_call_id=pending.call.id, content=result.text),
-        ]
-        async for chunk in self._agent_stream(messages, key, tool_already_executed=True):
-            yield chunk
+        yield ("⚠️ " if result.error else "✅ ") + result.text

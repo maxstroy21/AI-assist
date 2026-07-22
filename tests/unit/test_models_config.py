@@ -67,3 +67,28 @@ roles:
 """
     with pytest.raises(ConfigError, match="base_url"):
         load_models_config(write(tmp_path, text))
+
+
+DEEPSEEK = """
+runtimes:
+  deepseek:
+    kind: openai_compatible
+    base_url: https://api.deepseek.com
+    api_key: "${DEEPSEEK_API_KEY}"
+roles:
+  chat: {runtime: deepseek, model: "deepseek-chat"}
+"""
+
+
+def test_env_var_in_api_key_is_expanded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-secret-123")
+    config = load_models_config(write(tmp_path, DEEPSEEK))
+    assert config.runtimes["deepseek"].api_key == "sk-secret-123"
+
+
+def test_missing_env_var_raises_helpful_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    with pytest.raises(ConfigError, match="DEEPSEEK_API_KEY"):
+        load_models_config(write(tmp_path, DEEPSEEK))
