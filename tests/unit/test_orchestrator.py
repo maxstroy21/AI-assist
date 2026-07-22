@@ -442,6 +442,29 @@ async def test_destructive_cancelled_on_no(db: Database) -> None:
     assert executed == []
 
 
+async def test_expired_confirmation_is_not_fabricated(db: Database) -> None:
+    """«да» после истечения срока → честный отказ, а НЕ фабрикация «готово»
+    (живая проверка Sprint 8: ждал 24 мин, срок истёк, модель сочинила «удалил»)."""
+    executed: list[str] = []
+    llm = FakeLLM(
+        replies=[
+            [ToolCall(id="c1", name="probe", arguments={"value": "ф"})],
+            "готово, удалил (сочинено)",  # ловушка: не должно дойти до модели
+        ]
+    )
+    orchestrator = make_orchestrator(
+        llm, db, tools=[probe_spec(executed, risk=RiskLevel.DESTRUCTIVE)]
+    )
+
+    await collect(orchestrator, "удали")
+    # состарим ожидающее подтверждение далеко за пределы TTL
+    orchestrator._pending[("u1", "cli")].created_at -= 10_000
+    answer = await collect(orchestrator, "да")
+    assert executed == []              # ничего не выполнено
+    assert "истёк" in answer.lower()   # честный ответ, не выдуманное «готово»
+    assert "сочинено" not in answer
+
+
 async def test_unrelated_message_drops_pending(db: Database) -> None:
     executed: list[str] = []
     llm = FakeLLM(
