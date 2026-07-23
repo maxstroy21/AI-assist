@@ -127,6 +127,19 @@ FORCED_REFUSAL = (
     "конкретнее (что именно найти, создать или отметить) или начните новый "
     "разговор: /new."
 )
+# 7B после первого вызова иногда выдаёт СЛЕДУЮЩИЕ вызовы не штатно, а JSON-текстом
+# (в т.ч. массивом [{...}, {...}]) — это утекало сырым в чат (живая проверка
+# Sprint 8). Такой текст придерживаем и не показываем: просим ответить по-человечески.
+JSON_TEXT_RETRY_NUDGE = (
+    "Ты вывел вызов инструмента служебным JSON-текстом — пользователь не должен "
+    "видеть служебный формат. Если нужен инструмент — вызови его штатно, не "
+    "текстом. Если данных уже достаточно — ответь пользователю обычным текстом "
+    "по-русски по полученным результатам."
+)
+JSON_TEXT_REFUSAL = (
+    "⚠️ Модель выдавала ответ служебным форматом вместо текста, поэтому я его не "
+    "показываю. Повторите запрос или начните новый разговор: /new."
+)
 # Растяжка на фабрикацию вне принудительных тем: в ответе упомянуты пути или
 # файлы, хотя за весь ход не было ни одного реального вызова инструмента
 PATH_MENTION_RE = re.compile(r"[A-Za-z]:\\|\.(docx|xlsx|pdf|txt|md|log)\b")
@@ -321,21 +334,42 @@ class AgentOrchestrator:
         # принуждение к инструменту: держится, пока не случится реальный вызов
         force_pending = force_first_tool
         forced_retry_used = False
+        json_retry_used = False
         any_tool_executed = False
         try:
             for iteration in range(self._config.max_tool_iterations):
                 tool_choice = "required" if force_pending else None
-                # на принудительном шаге текст буферизуем: если модель вместо
-                # вызова начнёт сочинять ответ, пользователь его не увидит
+                # на принудительном шаге текст буферизуем целиком: если модель
+                # вместо вызова начнёт сочинять ответ, пользователь его не увидит
                 buffering = force_pending
                 raw_text: list[str] = []
                 tool_calls: list[ToolCall] | None = None
+                # «нюхаем» начало свободного ответа: обычный текст начинается с
+                # буквы — стримим сразу (потоковость сохранена); текст, начатый
+                # с { или [ — вероятный вызов инструмента, выданный JSON-ом (7B
+                # так делает после первого вызова) — придерживаем и НЕ показываем
+                # сырой служебный формат. live: None=нюхаем, True=стримим, False=держим.
+                live: bool | None = False if buffering else None
+                sniff = ""
                 async for event in self._gateway.stream(
                     "chat", messages, tools=tools, tool_choice=tool_choice
                 ):
                     if event.text:
                         raw_text.append(event.text)
-                        if not buffering:
+                        if live is None:
+                            sniff += event.text
+                            head = sniff.lstrip()
+                            if head:
+                                if head[0] in "{[":
+                                    live = False  # похоже на JSON-вызов — придержать
+                                else:
+                                    live = True
+                                    cleaned = strip_cjk(sniff)  # языковой барьер
+                                    if cleaned:
+                                        shown_any = True
+                                        yield cleaned
+                                    sniff = ""
+                        elif live:
                             cleaned = strip_cjk(event.text)  # языковой барьер
                             if cleaned:
                                 shown_any = True
@@ -346,7 +380,7 @@ class AgentOrchestrator:
                 joined = "".join(raw_text).strip()
                 if not tool_calls:
                     # qwen иногда пишет вызов инструмента JSON-текстом в ответ —
-                    # спасаем его как настоящий вызов, а не показываем мусор
+                    # спасаем одиночный вызов как настоящий, а не показываем мусор
                     salvaged = parse_tool_call_text(joined) if joined else None
                     if salvaged is not None:
                         log.info("text_tool_call_salvaged", tool=salvaged[0].name)
@@ -363,6 +397,22 @@ class AgentOrchestrator:
                             continue
                         log.error("forced_tool_refused", discarded=joined[:200])
                         yield FORCED_REFUSAL
+                        return
+                    elif live is False:
+                        # придержали JSON-подобный текст, но одиночным валидным
+                        # вызовом он не оказался (массив вызовов или мусор — 7B
+                        # имитирует служебный формат). Сырой JSON не показываем:
+                        # один раз просим ответить по-человечески, затем честно
+                        # сообщаем о срыве вместо вывода служебных строк.
+                        if not json_retry_used:
+                            json_retry_used = True
+                            log.warning("text_tool_json_held_retrying")
+                            messages.append(
+                                ChatMessage(role="system", content=JSON_TEXT_RETRY_NUDGE)
+                            )
+                            continue
+                        log.error("text_tool_json_refused", discarded=joined[:200])
+                        yield JSON_TEXT_REFUSAL
                         return
                     else:
                         if not shown_any:
