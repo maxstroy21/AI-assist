@@ -39,6 +39,7 @@ from sba.modules.files.ops import FileOpsService
 from sba.modules.files.opsstore import FileOpsStore
 from sba.modules.files.safety import RootGuard
 from sba.modules.files.tools import FilesToolset, build_fileops_tools
+from sba.modules.health.service import HealthMonitor
 from sba.modules.indexer.service import IndexerService
 from sba.modules.indexer.store import CatalogStore
 from sba.modules.memory.consolidation import MemoryConsolidator
@@ -94,8 +95,12 @@ class App:
         self.brief: MorningBrief | None = None
         self.backup: BackupService | None = None
         self.consolidator: MemoryConsolidator | None = None
+        self.health: HealthMonitor | None = None
         self.mcp_hub: MCPClientHub | None = None
         self.channels: list[ChannelAdapter] = []
+        # heartbeat-функции фоновых компонентов для health-монитора (Sprint 10);
+        # заполняется в create(), передаётся в run_forever() в run()
+        self._health_beats: dict[str, Callable[[], None]] = {}
 
     @classmethod
     async def create(cls, config_dir: Path) -> App:
@@ -318,6 +323,44 @@ class App:
                             hint="нужны роли extraction и summarize в config/models.yaml",
                         )
 
+            # Health-мониторинг (Sprint 10): фоновые компоненты подают сигнал
+            # жизни, монитор сам пишет в TG, если кто-то замолчал. Порог «завис»
+            # считаем из интервала самого компонента, чтобы нормальная пауза
+            # цикла не была ложной тревогой
+            health_cfg = config.modules.health
+            if health_cfg.enabled:
+                async def deliver_health(out: OutgoingMessage) -> None:
+                    assert app.router is not None
+                    await app.router.deliver(out)
+
+                app.health = HealthMonitor(
+                    deliver=deliver_health,
+                    targets=app._notify_targets(),
+                    check_interval_seconds=health_cfg.check_interval_seconds,
+                )
+
+                def silence(interval_seconds: float) -> float:
+                    return max(
+                        health_cfg.min_silence_seconds,
+                        interval_seconds * health_cfg.grace_multiplier,
+                    )
+
+                if app.indexer is not None:
+                    app._health_beats["indexer"] = app.health.register(
+                        "indexer", "индексатор документов",
+                        silence(rag_cfg.scan_interval_minutes * 60),
+                    )
+                if app.scheduler is not None:
+                    app._health_beats["scheduler"] = app.health.register(
+                        "scheduler", "планировщик напоминаний",
+                        silence(config.modules.scheduler.tick_seconds),
+                    )
+                if app.consolidator is not None:
+                    app._health_beats["consolidator"] = app.health.register(
+                        "consolidator", "консолидация памяти",
+                        silence(memory_cfg.check_interval_seconds),
+                    )
+
             # MCP Client Hub (Sprint 9): инструменты внешних серверов попадают
             # в общий реестр с риском из конфига; недоступный сервер — warning,
             # не отказ старта
@@ -446,6 +489,9 @@ class App:
         if self.backup is not None:
             # бэкап по требованию + список копий (Sprint 10)
             commands["/backup"] = ("сделать бэкап и показать копии", self.backup.overview_text)
+        if self.health is not None:
+            # ревизия здоровья фоновых компонентов (Sprint 10)
+            commands["/health"] = ("состояние фоновых компонентов", self.health.overview_text)
         if self.indexer is not None and rag_service is not None:
             indexer, rag = self.indexer, rag_service
 
@@ -522,9 +568,15 @@ class App:
                 )
             )
         if self.indexer is not None:
-            background.append(asyncio.create_task(self.indexer.run_forever()))
+            background.append(
+                asyncio.create_task(self.indexer.run_forever(self._health_beats.get("indexer")))
+            )
         if self.consolidator is not None:
-            background.append(asyncio.create_task(self.consolidator.run_forever()))
+            background.append(
+                asyncio.create_task(
+                    self.consolidator.run_forever(self._health_beats.get("consolidator"))
+                )
+            )
         if self.scheduler is not None:
             # порядок важен: сначала регистрация сводки и синхронизация задач,
             # потом цикл — иначе перерегистрация может затереть созревший джоб
@@ -536,7 +588,13 @@ class App:
                 synced = await self.reminders.sync_open_tasks()
                 if synced:
                     log.info("task_reminders_synced", tasks=synced)
-            background.append(asyncio.create_task(self.scheduler.run_forever()))
+            background.append(
+                asyncio.create_task(
+                    self.scheduler.run_forever(self._health_beats.get("scheduler"))
+                )
+            )
+        if self.health is not None:
+            background.append(asyncio.create_task(self.health.run_forever()))
         try:
             await asyncio.gather(*(ch.start() for ch in self.channels))
         finally:
