@@ -6,12 +6,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from sba.infra.config import Config
 from sba.infra.db import Database
-from sba.mcp.server import build_export_registry, build_mcp_server
+from sba.mcp.server import build_export_registry, build_mcp_server, resolve_data_dir
 
 
 def make_config(tmp_path, modules: list[str]) -> Config:
@@ -28,6 +30,25 @@ async def db(tmp_path):
     database = await Database.open(tmp_path / "data" / "sba.db")
     yield database
     await database.close()
+
+
+def test_relative_data_dir_resolved_against_project_root():
+    """Урок живой проверки: Claude Desktop запускает сервер из чужой рабочей
+    папки, поэтому относительный ./data должен считаться от корня проекта
+    (рядом с config), а не от текущего каталога — иначе PermissionError."""
+    config = Config.model_validate({"app": {"data_dir": "./data"}})
+    config_dir = Path("C:/Users/mmirosh/AI-assist/config")
+    resolved = resolve_data_dir(config, config_dir)
+    assert resolved.is_absolute()
+    assert resolved.name == "data"
+    assert resolved.parent.name == "AI-assist"
+
+
+def test_absolute_data_dir_kept_as_is(tmp_path):
+    absolute = tmp_path / "state"
+    config = Config.model_validate({"app": {"data_dir": str(absolute)}})
+    resolved = resolve_data_dir(config, tmp_path / "config")
+    assert resolved == absolute
 
 
 async def test_export_by_module_list(tmp_path, db):

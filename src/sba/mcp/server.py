@@ -62,6 +62,24 @@ log = structlog.get_logger(__name__)
 SERVER_NAME = "second-brain"
 
 
+def resolve_data_dir(config: Config, config_dir: Path) -> Path:
+    """Абсолютный путь к папке данных проекта.
+
+    `app.data_dir` в конфиге по умолчанию относительный (`./data`). Основное
+    приложение запускается из корня репозитория, и относительный путь верен.
+    Но MCP-сервер Claude Desktop стартует из ЧУЖОЙ рабочей папки — часто
+    системной, без прав на запись, — и `./data` там указывает не туда
+    (падение с PermissionError, урок живой проверки Sprint 9). Считаем
+    относительный путь от корня проекта (родитель папки config), чтобы бот и
+    Claude Desktop работали с одной базой независимо от текущего каталога.
+    Абсолютный путь из конфига уважаем как есть.
+    """
+    data_dir = config.app.data_dir
+    if data_dir.is_absolute():
+        return data_dir
+    return (config_dir.resolve().parent / data_dir).resolve()
+
+
 def build_export_registry(
     config: Config, config_dir: Path, db: Database
 ) -> tuple[ToolRegistry, ModelGateway | None]:
@@ -73,6 +91,7 @@ def build_export_registry(
     audit = AuditLog(db)
     registry = ToolRegistry(audit)
     tz = ZoneInfo(config.app.timezone)
+    data_dir = resolve_data_dir(config, config_dir)
 
     gateway: ModelGateway | None = None
 
@@ -91,7 +110,7 @@ def build_export_registry(
         elif module == "rag":
             rag_cfg = config.modules.rag
             try:
-                vectors = VectorStore.open(config.app.data_dir / "qdrant")
+                vectors = VectorStore.open(data_dir / "qdrant")
             except Exception as exc:
                 # embedded Qdrant уже открыт основным приложением — работаем
                 # с пустым векторным стором: поиск деградирует до FTS
@@ -180,9 +199,10 @@ async def run_server(config_dir: Path) -> None:
     # формат json: stderr MCP-сервера Claude Desktop пишет в свой лог-файл,
     # структурированные строки там читаются лучше цветных ANSI-кодов
     setup_logging(config.logging.level, "json")
-    log.info("mcp_server_starting", version=__version__)
+    data_dir = resolve_data_dir(config, config_dir)
+    log.info("mcp_server_starting", version=__version__, data_dir=str(data_dir))
 
-    db = await Database.open(config.app.data_dir / "sba.db")
+    db = await Database.open(data_dir / "sba.db")
     gateway: ModelGateway | None = None
     try:
         registry, gateway = build_export_registry(config, config_dir, db)
