@@ -11,6 +11,7 @@ superseded_by (история решений сохраняется, docs/02-arc
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -29,6 +30,11 @@ ACTIVE = "superseded_by IS NULL AND retracted_at IS NULL"
 
 MEMORY_COLLECTION = "memory"
 VECTOR_POOL = 12  # кандидатов от векторной половины до слияния
+# потолок на семантическую половину recall: эмбеддинг bge-m3 на CPU при
+# холодной загрузке модели — десятки секунд; recall не должен на этом висеть.
+# Превысили — отдаём быстрые лексические результаты (FTS), а модель тем
+# временем догружается на стороне Ollama для следующего запроса.
+VECTOR_SEARCH_TIMEOUT = 8.0
 
 # Типы, у которых по одной теме актуальна одна запись: новая вытесняет старую
 # через superseded_by, история сохраняется («решили X, потом передумали на Y»)
@@ -241,14 +247,25 @@ class MemoryStore:
             return []
         assert self._vectors is not None and self._embedder is not None
         try:
-            vector = (await self._embedder.embed([query]))[0]
-            hits = await self._vectors.search(
-                MEMORY_COLLECTION, vector, VECTOR_POOL, {"user_id": user_id}
+            return await asyncio.wait_for(
+                self._embed_and_search(user_id, query), timeout=VECTOR_SEARCH_TIMEOUT
             )
-            return [str(hit.payload.get("fact_id", "")) for hit in hits]
+        except TimeoutError:
+            # холодная bge-m3 грузится дольше потолка — не держим ответ,
+            # возвращаемся к лексическим результатам (recall их уже собрал)
+            log.warning("memory_vector_search_slow", timeout=VECTOR_SEARCH_TIMEOUT)
+            return []
         except Exception as exc:
             log.warning("memory_vector_search_failed", error=str(exc))
             return []
+
+    async def _embed_and_search(self, user_id: str, query: str) -> list[str]:
+        assert self._vectors is not None and self._embedder is not None
+        vector = (await self._embedder.embed([query]))[0]
+        hits = await self._vectors.search(
+            MEMORY_COLLECTION, vector, VECTOR_POOL, {"user_id": user_id}
+        )
+        return [str(hit.payload.get("fact_id", "")) for hit in hits]
 
     async def _drop_vectors(self, fact_ids: list[str]) -> None:
         if not self._vector_enabled or not fact_ids:
