@@ -253,6 +253,32 @@ class FileOpsConfig(_Strict):
         return v.strip()
 
 
+class BackupConfig(_Strict):
+    """Бэкап SQLite + конфигов с restore-тестом (Sprint 10). Qdrant не бэкапится:
+    векторный индекс восстанавливается переиндексацией (scripts/reindex.py --full)."""
+
+    enabled: bool = True
+    time: str = "14:00"        # дневной час: ноутбук владельца ночью выключен,
+                               # misfire=deliver догоняет пропуск при запуске
+    keep_last: int = 14        # сколько последних копий хранить
+    dir: Path | None = None    # пусто — data/backups
+    timeout_seconds: float = 120.0  # потолок на упаковку и restore-тест
+
+    @field_validator("time")
+    @classmethod
+    def _valid_time(cls, v: str) -> str:
+        if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", v):
+            raise ValueError(f"время бэкапа должно быть в формате ЧЧ:ММ, получено {v!r}")
+        return v
+
+    @field_validator("keep_last", "timeout_seconds")
+    @classmethod
+    def _positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("значение должно быть > 0")
+        return v
+
+
 class McpServerEntry(_Strict):
     """Внешний MCP-сервер (Sprint 9): его инструменты попадают в общий Tool
     Registry и подчиняются тем же уровням риска (ADR-7, ADR-10)."""
@@ -313,6 +339,7 @@ class ModulesConfig(_Strict):
     scheduler: SchedulerConfig = SchedulerConfig()
     reminders: RemindersConfig = RemindersConfig()
     fileops: FileOpsConfig = FileOpsConfig()
+    backup: BackupConfig = BackupConfig()
 
 
 class LLMBehaviorConfig(_Strict):
