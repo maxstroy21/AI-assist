@@ -1,4 +1,5 @@
-"""Извлечение текста из файлов: PDF (pypdf), DOCX (python-docx), MD, TXT.
+"""Извлечение текста из файлов: PDF (pypdf), DOCX (python-docx), XLSX
+(openpyxl), MD, TXT.
 
 Все функции синхронные и CPU-bound — вызывающий обязан уводить их
 в worker-поток (asyncio.to_thread) и оборачивать таймаутом.
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 
@@ -25,7 +27,13 @@ class Block:
     locator: str  # «стр. 3», «раздел …»; пусто — чанкер пронумерует сам
 
 
-SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".md", ".txt"}
+SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".md", ".txt"}
+
+# Потолки для XLSX: таблица владельца может быть на десятки тысяч строк —
+# «всё внешнее обязано иметь границу» (урок проекта). Чанкер потом дробит
+# блок сам, но строить гигантскую строку в памяти мы не будем.
+XLSX_MAX_ROWS_PER_SHEET = 5000
+XLSX_MAX_COLS_PER_ROW = 64
 
 
 def extract(path: Path) -> list[Block]:
@@ -36,6 +44,8 @@ def extract(path: Path) -> list[Block]:
             return _extract_pdf(path)
         if suffix == ".docx":
             return _extract_docx(path)
+        if suffix == ".xlsx":
+            return _extract_xlsx(path)
         if suffix == ".md":
             return _extract_markdown(path)
         if suffix == ".txt":
@@ -95,6 +105,51 @@ def _extract_docx(path: Path) -> list[Block]:
         buffer.append(text)
     flush()
     return blocks
+
+
+def _format_cell(value: object) -> str:
+    """Ячейка → короткая строка для поиска. Формулы уже посчитаны
+    (data_only), даты приводим к ISO без микросекунд."""
+    if value is None:
+        return ""
+    if isinstance(value, bool):  # bool раньше int — иначе True станет «1»
+        return "да" if value else "нет"
+    if isinstance(value, datetime):
+        text = value.isoformat(sep=" ")
+        return text[:-3] if text.endswith(":00") else text  # секунды-нули — лишние
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))  # 100.0 → «100», чтобы искалось как в тексте
+    return str(value).strip()
+
+
+def _extract_xlsx(path: Path) -> list[Block]:
+    """Каждый лист → блок; строки склеены ` | `, пустые пропущены.
+    read_only — не держим весь файл в памяти; data_only — значения
+    формул, а не их текст (Excel кэширует их при сохранении)."""
+    from openpyxl import load_workbook
+
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    try:
+        blocks: list[Block] = []
+        for sheet in workbook.worksheets:
+            lines: list[str] = []
+            truncated = False
+            for row in sheet.iter_rows(values_only=True):
+                if len(lines) >= XLSX_MAX_ROWS_PER_SHEET:
+                    truncated = True
+                    break
+                cells = [_format_cell(v) for v in row[:XLSX_MAX_COLS_PER_ROW]]
+                while cells and not cells[-1]:  # хвостовые пустые ячейки — шум
+                    cells.pop()
+                if any(cells):
+                    lines.append(" | ".join(cells))
+            if truncated:
+                lines.append(f"… (показаны первые {XLSX_MAX_ROWS_PER_SHEET} строк)")
+            if lines:
+                blocks.append(Block(text="\n".join(lines), locator=f"лист «{sheet.title}»"))
+        return blocks
+    finally:
+        workbook.close()
 
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")

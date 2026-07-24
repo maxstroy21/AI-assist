@@ -1,9 +1,15 @@
+from datetime import datetime
 from pathlib import Path
 
 import docx as docx_lib
 import pytest
+from openpyxl import Workbook
 
-from sba.modules.indexer.extractors import ExtractError, extract
+from sba.modules.indexer.extractors import (
+    XLSX_MAX_ROWS_PER_SHEET,
+    ExtractError,
+    extract,
+)
 
 
 def build_minimal_pdf(text: str) -> bytes:
@@ -87,6 +93,58 @@ def test_docx_headings(tmp_path: Path) -> None:
     blocks = extract(file)
     assert blocks[0].locator == "раздел «Договор подряда»"
     assert "Исполнитель" in blocks[0].text
+
+
+def test_xlsx_sheets_and_values(tmp_path: Path) -> None:
+    workbook = Workbook()
+    first = workbook.active
+    first.title = "Бюджет"
+    first.append(["Статья", "Сумма", "Оплачено"])
+    first.append(["Аренда лодки", 100000.0, True])
+    first.append([None, None, None])  # пустая строка — пропускается
+    first.append(["Провизия", 25000, False])
+    second = workbook.create_sheet("Сроки")
+    second.append(["Выезд", datetime(2026, 8, 1, 9, 0)])
+    file = tmp_path / "expedition.xlsx"
+    workbook.save(str(file))
+
+    blocks = extract(file)
+
+    assert [b.locator for b in blocks] == ["лист «Бюджет»", "лист «Сроки»"]
+    budget = blocks[0].text
+    assert "Статья | Сумма | Оплачено" in budget
+    assert "Аренда лодки | 100000 | да" in budget  # float→int, bool→«да»
+    assert "Провизия | 25000 | нет" in budget
+    assert "\n\n" not in budget  # пустая строка не породила пустую линию
+    assert "Выезд | 2026-08-01 09:00" in blocks[1].text
+
+
+def test_xlsx_empty_sheet_produces_no_block(tmp_path: Path) -> None:
+    workbook = Workbook()
+    workbook.active.title = "Пусто"  # ни одной ячейки со значением
+    file = tmp_path / "empty.xlsx"
+    workbook.save(str(file))
+    assert extract(file) == []
+
+
+def test_xlsx_row_cap(tmp_path: Path) -> None:
+    workbook = Workbook()
+    sheet = workbook.active
+    for i in range(XLSX_MAX_ROWS_PER_SHEET + 50):
+        sheet.append([f"строка {i}"])
+    file = tmp_path / "big.xlsx"
+    workbook.save(str(file))
+    lines = extract(file)[0].text.splitlines()
+    # ровно потолок строк данных + одна строка-пометка об усечении
+    assert len(lines) == XLSX_MAX_ROWS_PER_SHEET + 1
+    assert lines[-1].startswith("…")
+
+
+def test_broken_xlsx_raises_extract_error(tmp_path: Path) -> None:
+    file = tmp_path / "broken.xlsx"
+    file.write_bytes(b"PK\x03\x04 not really a spreadsheet")
+    with pytest.raises(ExtractError):
+        extract(file)
 
 
 def test_unsupported_extension(tmp_path: Path) -> None:
