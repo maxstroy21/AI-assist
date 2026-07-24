@@ -193,8 +193,11 @@ class AgentOrchestrator:
         # чтобы ядро не знало о модулях (границы docs/03)
         self._extra_commands = extra_commands or {}
         # модули, чьи инструменты доступны модели всегда, даже при
-        # topic_scoped_tools (MCP-серверы, Sprint 9: у их тем нет наших маркеров)
-        self._extra_always = extra_always_modules or set()
+        # topic_scoped_tools (MCP-серверы, Sprint 9: у их тем нет наших маркеров).
+        # Держим ссылку как есть (а не `or set()`): MCP подключается фоново, и
+        # пустое на момент создания множество хаб пополнит позже — по этой же
+        # ссылке. Новый set() порвал бы связь и MCP-тулы не попадали бы в scope
+        self._extra_always = extra_always_modules if extra_always_modules is not None else set()
 
     async def process(self, msg: IncomingMessage, session: Session) -> Reply:
         # привязка инструментов к источнику (задача ↔ сообщение, Sprint 5)

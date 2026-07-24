@@ -53,39 +53,37 @@ class _ServerState:
     entry: McpServerEntry
     queue: asyncio.Queue[_CallRequest] = field(default_factory=asyncio.Queue)
     task: asyncio.Task[None] | None = None
+    registered: bool = False  # тулы зарегистрированы (при реконнекте не дублируем)
 
 
 class MCPClientHub:
     def __init__(self, servers: list[McpServerEntry]) -> None:
         self._servers = {s.name: _ServerState(entry=s) for s in servers if s.enabled}
-        # имена «модулей» зарегистрированных серверов — для topic-scoped фильтра
+        # имена «модулей» зарегистрированных серверов — для topic-scoped фильтра.
+        # Множество живёт по ссылке: оркестратор держит ту же ссылку и видит
+        # серверы, подключившиеся уже после его создания (подключение фоновое)
         self.module_names: set[str] = set()
 
     # ── запуск и регистрация ─────────────────────────────────────────────────
 
     async def start(self, registry: ToolRegistry) -> None:
-        """Поднять серверы и зарегистрировать их инструменты. Сбой любого
-        сервера — предупреждение в лог, не отказ старта приложения."""
+        """Запустить подключение серверов В ФОНЕ и сразу вернуться.
+
+        Урок живой проверки (Windows): блокирующее ожидание подключения на
+        старте подвешивало ВЕСЬ запуск — каналы не поднимались, пока внешний
+        процесс (`uvx …`) медленно скачивался или висел. Теперь запуск каналов
+        не ждёт MCP ни секунды: недоступный или медленный сервер просто
+        появится (или нет) позже, а бот отвечает с первой секунды. Инструменты
+        сервера регистрируются его же воркером в момент успешного подключения —
+        реестр читается оркестратором на каждый запрос, поэтому поздняя
+        регистрация подхватывается сама.
+        """
         for state in self._servers.values():
-            ready: asyncio.Future[list[Any]] = asyncio.get_running_loop().create_future()
             state.task = asyncio.create_task(
-                self._worker(state, ready), name=f"mcp-{state.entry.name}"
+                self._worker(state, registry), name=f"mcp-{state.entry.name}"
             )
-            try:
-                tools = await asyncio.wait_for(
-                    ready, timeout=state.entry.connect_timeout_seconds
-                )
-            except Exception as exc:  # таймаут ожидания или отказ соединения
-                state.task.cancel()
-                state.task = None
-                log.warning(
-                    "mcp_server_unavailable",
-                    server=state.entry.name,
-                    error=str(exc) or type(exc).__name__,
-                    hint="проверьте command/url в mcp.servers; сервер пропущен",
-                )
-                continue
-            self._register_tools(registry, state, tools)
+        if self._servers:
+            log.info("mcp_hub_connecting", servers=list(self._servers))
 
     def _register_tools(
         self, registry: ToolRegistry, state: _ServerState, tools: list[Any]
@@ -139,32 +137,42 @@ class MCPClientHub:
 
     # ── фоновая задача сервера: соединение живёт здесь ───────────────────────
 
-    async def _worker(
-        self, state: _ServerState, ready: asyncio.Future[list[Any]]
-    ) -> None:
+    async def _worker(self, state: _ServerState, registry: ToolRegistry) -> None:
         """Владелец соединения: контексты транспорта открываются и закрываются
-        в ОДНОЙ задаче (требование anyio), падение → переподключение."""
+        в ОДНОЙ задаче (требование anyio). Подключается, регистрирует тулы при
+        первом успехе, обслуживает вызовы; при падении — переподключение.
+
+        Полностью фоновый: любое исключение здесь — предупреждение в лог, а не
+        отказ старта (каналы уже отвечают). Подключение — под таймаутом, чтобы
+        зависший внешний процесс не держал соединение вечно."""
         entry = state.entry
         while True:
             try:
                 async with AsyncExitStack() as stack:
-                    session = await self._connect(stack, entry)
+                    session = await asyncio.wait_for(
+                        self._connect(stack, entry),
+                        timeout=entry.connect_timeout_seconds,
+                    )
                     tools = await self._list_all_tools(session)
-                    if not ready.done():
-                        ready.set_result(tools)
+                    if not state.registered:
+                        # тулы регистрируем один раз: при реконнекте они уже в
+                        # реестре, хендлер шлёт в ту же очередь этого воркера
+                        self._register_tools(registry, state, tools)
+                        state.registered = True
                     await self._serve_calls(state, session)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                if not ready.done():
-                    # первый коннект не удался — наружу, start() пропустит сервер
-                    ready.set_exception(exc)
-                    return
                 log.warning(
-                    "mcp_server_lost",
+                    "mcp_server_unavailable" if not state.registered else "mcp_server_lost",
                     server=entry.name,
-                    error=str(exc),
+                    error=str(exc) or type(exc).__name__,
                     retry_seconds=RECONNECT_DELAY_SECONDS,
+                    hint=(
+                        "проверьте command/url в mcp.servers"
+                        if not state.registered
+                        else None
+                    ),
                 )
                 await asyncio.sleep(RECONNECT_DELAY_SECONDS)
 

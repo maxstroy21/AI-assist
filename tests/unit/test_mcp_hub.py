@@ -77,9 +77,24 @@ def hub_with_session(server_entry, session) -> MCPClientHub:
     return hub
 
 
+async def wait_until(cond, limit_seconds: float = 2.0) -> None:
+    """Дождаться условия — подключение и регистрация тулов теперь фоновые."""
+    for _ in range(int(limit_seconds / 0.01)):
+        if cond():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("условие не выполнилось за отведённое время")
+
+
+async def start_and_register(hub: MCPClientHub, registry, tool="fetch_page") -> None:
+    """Запустить хаб и дождаться фоновой регистрации инструмента."""
+    await hub.start(registry)
+    await wait_until(lambda: registry.get(tool) is not None)
+
+
 async def test_tools_registered_with_schema_and_risk(registry):
     hub = hub_with_session(entry(risk="read"), FakeSession([fake_tool()]))
-    await hub.start(registry)
+    await start_and_register(hub, registry)
     spec = registry.get("fetch_page")
     assert spec is not None
     assert spec.risk == RiskLevel.READ
@@ -92,7 +107,7 @@ async def test_tools_registered_with_schema_and_risk(registry):
 
 async def test_default_risk_is_destructive(registry):
     hub = hub_with_session(entry(), FakeSession([fake_tool()]))
-    await hub.start(registry)
+    await start_and_register(hub, registry)
     with pytest.raises(ConfirmationRequired):
         await registry.execute(
             ToolCall(id="1", name="fetch_page", arguments={"url": "http://x"})
@@ -104,7 +119,7 @@ async def test_tool_risk_override(registry):
     hub = hub_with_session(
         entry(tool_risks={"fetch_page": "read"}), FakeSession([fake_tool()])
     )
-    await hub.start(registry)
+    await start_and_register(hub, registry)
     assert registry.get("fetch_page").risk == RiskLevel.READ
     await hub.stop()
 
@@ -112,7 +127,7 @@ async def test_tool_risk_override(registry):
 async def test_call_goes_through_registry(registry):
     session = FakeSession([fake_tool()], result_text="страница скачана")
     hub = hub_with_session(entry(risk="read"), session)
-    await hub.start(registry)
+    await start_and_register(hub, registry)
     result = await registry.execute(
         ToolCall(id="1", name="fetch_page", arguments={"url": "http://x"})
     )
@@ -125,7 +140,7 @@ async def test_call_goes_through_registry(registry):
 async def test_error_result_marked(registry):
     session = FakeSession([fake_tool()], result_text="404", is_error=True)
     hub = hub_with_session(entry(risk="read"), session)
-    await hub.start(registry)
+    await start_and_register(hub, registry)
     result = await registry.execute(
         ToolCall(id="1", name="fetch_page", arguments={"url": "http://x"})
     )
@@ -142,6 +157,7 @@ async def test_unavailable_server_skipped(registry):
 
     hub._connect = failing_connect  # type: ignore[method-assign]
     await hub.start(registry)  # не бросает — приложение стартует без сервера
+    await asyncio.sleep(0.05)   # даём воркеру одну неудачную попытку подключения
     assert registry.available() == []
     assert hub.module_names == set()
     await hub.stop()
@@ -164,7 +180,7 @@ async def test_name_conflict_gets_prefix(registry):
         )
     )
     hub = hub_with_session(entry(risk="read"), FakeSession([fake_tool()]))
-    await hub.start(registry)
+    await start_and_register(hub, registry, tool="fetch_fetch_page")
     spec = registry.get("fetch_fetch_page")
     assert spec is not None and spec.module == "mcp:fetch"
     # внутренний не затёрт
@@ -184,7 +200,7 @@ async def test_reconnect_after_transport_failure(registry, monkeypatch):
         return session
 
     hub._connect = fake_connect  # type: ignore[method-assign]
-    await hub.start(registry)
+    await start_and_register(hub, registry)
 
     first = await registry.execute(
         ToolCall(id="1", name="fetch_page", arguments={"url": "http://x"})
@@ -203,4 +219,19 @@ async def test_disabled_server_ignored(registry):
     hub = MCPClientHub([entry(enabled=False)])
     await hub.start(registry)
     assert registry.available() == []
+    await hub.stop()
+
+
+async def test_start_does_not_block_on_hanging_connect(registry):
+    """Урок живой проверки (Windows): подключение к зависшему серверу не должно
+    задерживать старт. start() обязан вернуться мгновенно, а не ждать сервер."""
+    hub = MCPClientHub([entry()])
+
+    async def hanging_connect(stack, e):
+        await asyncio.sleep(100)  # «внешний процесс висит»
+
+    hub._connect = hanging_connect  # type: ignore[method-assign]
+    # если start ждёт подключения — тест не уложится в таймаут
+    await asyncio.wait_for(hub.start(registry), timeout=0.5)
+    assert registry.available() == []  # тулов ещё нет, но приложение живо
     await hub.stop()
