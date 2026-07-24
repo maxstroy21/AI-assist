@@ -24,6 +24,9 @@ class FakeLLM:
     def _next_reply(self) -> ScriptItem:
         return self._replies.pop(0) if self._replies else "ok"
 
+    def chat_runtime_is_local(self) -> bool:
+        return True  # фейк «локален» — тесты подсказок про облако задают свой
+
     async def chat(self, role: Role, messages: list[ChatMessage]) -> ChatResult:
         self.calls.append((role, list(messages)))
         item = self._next_reply()

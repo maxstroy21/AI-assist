@@ -111,6 +111,62 @@ async def test_retries_on_5xx_then_succeeds(monkeypatch: pytest.MonkeyPatch) -> 
     assert calls["n"] == 2
 
 
+async def test_retries_on_429_honoring_retry_after(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"n": 0}
+    slept: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # облако просит подождать 3 секунды — уважаем заголовок
+            return httpx.Response(429, text="rate limit", headers={"retry-after": "3"})
+        return httpx.Response(
+            200, json={"model": "m", "choices": [{"message": {"content": "ок"}}]}
+        )
+
+    async def capture_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr("asyncio.sleep", capture_sleep)
+    result = await make_provider(handler).chat("m", MSGS)
+    assert result.text == "ок"
+    assert calls["n"] == 2
+    assert slept == [3.0]  # пауза взята из Retry-After, а не из экспоненты
+
+
+async def test_429_retry_after_capped(monkeypatch: pytest.MonkeyPatch) -> None:
+    slept: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # облако просит ждать неприемлемо долго — не висим дольше потолка
+        return httpx.Response(429, text="slow down", headers={"retry-after": "600"})
+
+    async def capture_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr("asyncio.sleep", capture_sleep)
+    with pytest.raises(LLMError, match="429"):
+        await make_provider(handler).chat("m", MSGS)
+    assert slept and all(d <= 20.0 for d in slept)  # каждая пауза под потолком
+
+
+async def test_stream_retries_on_429(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, text="rate limit", headers={"retry-after": "1"})
+        return httpx.Response(200, content=sse("готово"))
+
+    async def no_sleep(_: float) -> None: ...
+
+    monkeypatch.setattr("asyncio.sleep", no_sleep)
+    parts = [e.text async for e in make_provider(handler).stream("m", MSGS)]
+    assert "".join(parts) == "готово"
+    assert calls["n"] == 2
+
+
 async def test_4xx_fails_without_retry() -> None:
     calls = {"n": 0}
 
