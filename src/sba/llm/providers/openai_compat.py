@@ -16,7 +16,15 @@ from typing import Any
 import httpx
 import structlog
 
-from sba.llm.gateway import ChatMessage, ChatResult, LLMError, StreamEvent, ToolCall, ToolSchema
+from sba.llm.gateway import (
+    ChatMessage,
+    ChatResult,
+    LLMError,
+    StreamEvent,
+    ToolCall,
+    ToolChoiceError,
+    ToolSchema,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -207,6 +215,10 @@ class OpenAICompatProvider:
                                 continue
                             if chunk is _DONE:
                                 break
+                            # облако может прислать ошибку внутри 200-потока
+                            # (Groq: tool_use_failed при строгой валидации тулов)
+                            if isinstance(chunk, dict) and chunk.get("error"):
+                                raise _stream_error(chunk["error"])
                             text = self._collect_delta(chunk, partial_calls)  # type: ignore[arg-type]
                             if text:
                                 yield StreamEvent(text=text)
@@ -315,6 +327,20 @@ class OpenAICompatProvider:
             delay = min(base, MAX_RETRY_DELAY)
             log.warning("llm_retry", attempt=attempt + 1, delay=delay, reason=reason)
             await asyncio.sleep(delay)
+
+
+def _stream_error(err: Any) -> LLMError:
+    """Ошибка внутри 200-потока → типизированное исключение. tool_use_failed
+    (модель позвала тул вне отправленного набора) отделяем — оркестратор его
+    лечит расширением набора; прочее — обычная ошибка с внятным текстом."""
+    if isinstance(err, dict):
+        message = str(err.get("message", err))
+        code = err.get("code")
+    else:
+        message, code = str(err), None
+    if code == "tool_use_failed":
+        return ToolChoiceError(message)
+    return LLMError(f"облако вернуло ошибку в потоке: {message[:300]}")
 
 
 def _normalize_tool_args(arguments: object, tool_name: str) -> dict[str, Any]:
