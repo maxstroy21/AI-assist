@@ -17,6 +17,7 @@ import structlog
 from sba import __version__
 from sba.channels.cli.repl import CliChannel
 from sba.channels.telegram.gateway import TelegramChannel
+from sba.channels.webchat.gateway import WebChatChannel
 from sba.core.agent.orchestrator import AgentOrchestrator
 from sba.core.events import EventBus, MessageReceived, SessionClosed
 from sba.core.history import HistoryStore
@@ -31,6 +32,7 @@ from sba.infra.logging import setup_logging
 from sba.infra.vectors import VectorStore
 from sba.llm.config import load_models_config
 from sba.llm.service import ModelGateway
+from sba.mcp.client_hub import MCPClientHub
 from sba.modules.basic.tools import build_tools as build_basic_tools
 from sba.modules.files.ops import FileOpsService
 from sba.modules.files.opsstore import FileOpsStore
@@ -90,6 +92,7 @@ class App:
         self.reminders: ReminderService | None = None
         self.brief: MorningBrief | None = None
         self.consolidator: MemoryConsolidator | None = None
+        self.mcp_hub: MCPClientHub | None = None
         self.channels: list[ChannelAdapter] = []
 
     @classmethod
@@ -138,21 +141,41 @@ class App:
                         hint="добавьте роль embedding в config/models.yaml — "
                         "поиск по документам будет только лексическим",
                     )
-                app.vectors = VectorStore.open(config.app.data_dir / "qdrant")
-                rag_service = RAGService(
-                    ChunkStore(app.db),
-                    app.vectors,
-                    app.gateway,
-                    embed_batch=rag_cfg.embed_batch,
-                )
-                for spec in build_rag_tools(
-                    rag_service,
-                    top_k=rag_cfg.search_top_k,
-                    snippet_chars=rag_cfg.snippet_chars,
-                    configured=bool(rag_cfg.sources),
-                ):
-                    registry.register(spec)
-                app.indexer = IndexerService(CatalogStore(app.db), rag_service, rag_cfg)
+                # embedded Qdrant — однопроцессный: если файлы уже открыты (чаще
+                # всего — второй запущенный экземпляр бота, либо предыдущий не
+                # завершился до конца), открытие падает блокировкой. НЕ роняем
+                # весь ассистент из-за поиска: понятно объясняем причину и
+                # работаем дальше без векторного индекса (поиск по документам —
+                # лексический, всё остальное — как обычно). Урок «внешнее не
+                # должно ронять систему», живая проверка Sprint 9
+                try:
+                    app.vectors = VectorStore.open(config.app.data_dir / "qdrant")
+                except Exception as exc:
+                    log.error("rag_vectors_locked", error=str(exc))
+                    print(
+                        "⚠️ Поисковый индекс документов занят и не открылся. Скорее "
+                        "всего ассистент УЖЕ ЗАПУЩЕН в другом окне — тогда закройте "
+                        "это окно и пользуйтесь тем. Если нет — закройте все окна "
+                        "бота, подождите несколько секунд и запустите заново.\n"
+                        "   Пока продолжаю без поиска по документам (остальное "
+                        "работает).",
+                        flush=True,
+                    )
+                if app.vectors is not None:
+                    rag_service = RAGService(
+                        ChunkStore(app.db),
+                        app.vectors,
+                        app.gateway,
+                        embed_batch=rag_cfg.embed_batch,
+                    )
+                    for spec in build_rag_tools(
+                        rag_service,
+                        top_k=rag_cfg.search_top_k,
+                        snippet_chars=rag_cfg.snippet_chars,
+                        configured=bool(rag_cfg.sources),
+                    ):
+                        registry.register(spec)
+                    app.indexer = IndexerService(CatalogStore(app.db), rag_service, rag_cfg)
 
             tasks: TasksService | None = None
             tasks_cfg = config.modules.tasks
@@ -235,9 +258,12 @@ class App:
                 # векторный recall памяти включается вместе с RAG (общий Qdrant
                 # и эмбеддер); без него память работает на FTS, как в Sprint 3.
                 # semantic=false снимает эмбеддинг-модель с горячего пути ради
-                # экономии RAM (см. modules.memory.semantic в config)
-                mem_vectors = app.vectors if memory_cfg.semantic else None
-                mem_embedder = app.gateway if memory_cfg.semantic else None
+                # экономии RAM (см. modules.memory.semantic в config).
+                # app.vectors is None — Qdrant не открылся (занят): память тоже
+                # уходит на FTS, а не падает
+                semantic_ok = memory_cfg.semantic and app.vectors is not None
+                mem_vectors = app.vectors if semantic_ok else None
+                mem_embedder = app.gateway if semantic_ok else None
                 memory_store = MemoryStore(app.db, vectors=mem_vectors, embedder=mem_embedder)
                 episode_store = EpisodeStore(app.db)
                 memory = MemoryService(memory_store, episodes=episode_store)
@@ -268,6 +294,13 @@ class App:
                             hint="нужны роли extraction и summarize в config/models.yaml",
                         )
 
+            # MCP Client Hub (Sprint 9): инструменты внешних серверов попадают
+            # в общий реестр с риском из конфига; недоступный сервер — warning,
+            # не отказ старта
+            if config.mcp.servers:
+                app.mcp_hub = MCPClientHub(config.mcp.servers)
+                await app.mcp_hub.start(registry)
+
             processor = AgentOrchestrator(
                 gateway=app.gateway,
                 history=HistoryStore(app.db),
@@ -277,6 +310,9 @@ class App:
                 timezone=config.app.timezone,
                 memory=memory,
                 extra_commands=app._build_extra_commands(rag_service, tasks, memory, fileops),
+                extra_always_modules=(
+                    app.mcp_hub.module_names if app.mcp_hub is not None else None
+                ),
             )
 
             if app.indexer is not None:
@@ -316,6 +352,40 @@ class App:
             app.router.register_channel(telegram)
             app.channels.append(telegram)
 
+        if config.channels.web.enabled:
+            web_cfg = config.channels.web
+            if web_cfg.host not in ("127.0.0.1", "localhost", "::1"):
+                log.warning(
+                    "web_chat_non_local_host",
+                    host=web_cfg.host,
+                    hint="аутентификации в web-чате нет — не открывайте его в сеть",
+                )
+            db = app.db
+            history_store = HistoryStore(db)
+
+            async def web_history() -> list[dict[str, str]]:
+                # история активного разговора web-канала для новой вкладки
+                row = await db.fetch_one(
+                    "SELECT id FROM conversations"
+                    " WHERE user_id=? AND channel=? AND closed_at IS NULL"
+                    " ORDER BY started_at DESC LIMIT 1",
+                    ("local", "web"),
+                )
+                if row is None:
+                    return []
+                entries = await history_store.recent(row["id"], web_cfg.history_messages)
+                return [{"role": e.role, "text": e.content} for e in entries]
+
+            web = WebChatChannel(
+                host=web_cfg.host,
+                port=web_cfg.port,
+                handle_incoming=app.router.handle_incoming,
+                handle_action=app.router.handle_action,
+                fetch_history=web_history,
+            )
+            app.router.register_channel(web)
+            app.channels.append(web)
+
         return app
 
     def _notify_targets(self) -> list[tuple[str, str]]:
@@ -326,6 +396,8 @@ class App:
             targets.append(("telegram", str(telegram_cfg.allowed_user_ids[0])))
         if self.config.channels.cli.enabled:
             targets.append(("cli", "local"))
+        if self.config.channels.web.enabled:
+            targets.append(("web", "local"))
         return targets
 
     def _build_extra_commands(
@@ -427,6 +499,8 @@ class App:
     async def shutdown(self) -> None:
         for channel in self.channels:
             await channel.stop()
+        if self.mcp_hub is not None:
+            await self.mcp_hub.stop()
         if self.gateway is not None:
             await self.gateway.aclose()
         if self.vectors is not None:

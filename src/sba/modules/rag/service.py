@@ -17,7 +17,7 @@ import structlog
 
 from sba.infra.ranking import rrf_merge
 from sba.infra.vectors import VectorPoint, VectorStore
-from sba.llm.gateway import Embedder, LLMError
+from sba.llm.gateway import Embedder
 from sba.modules.rag.interface import Chunk
 from sba.modules.rag.store import ChunkStore
 
@@ -96,8 +96,11 @@ class RAGService:
                 DOCUMENTS_COLLECTION, query_vector, CANDIDATE_POOL
             )
             dense_ids = [hit.id for hit in hits]
-        except LLMError as exc:
-            # деградация до лексического поиска — лучше, чем отказ
+        except Exception as exc:
+            # деградация до лексического поиска — лучше, чем отказ: сюда попадают
+            # и недоступная эмбеддинг-модель (LLMError), и недоступное векторное
+            # хранилище (например, MCP-сервер работает рядом с основным
+            # приложением, которое держит embedded Qdrant — Sprint 9)
             log.warning("rag_dense_search_unavailable", error=str(exc))
 
         merged = rrf_merge([[c.id for c in lexical], dense_ids], limit=k)

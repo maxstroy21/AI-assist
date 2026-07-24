@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Second Brain Agent</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --text: #1c1e21; --muted: #6b7280;
+    --user: #d7e6ff; --assistant: #ffffff; --notify: #fff5d6;
+    --border: #e2e4e8; --accent: #2f6fdb; --accent-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d; --panel: #1f2229; --text: #e8eaed; --muted: #9aa0a6;
+      --user: #2b4a75; --assistant: #262a33; --notify: #4a3d1e;
+      --border: #33373f; --accent: #4c8dff; --accent-text: #ffffff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; height: 100dvh;
+  }
+  header {
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  #status { font-size: 12px; color: var(--muted); }
+  #status.off { color: #d9534f; }
+  #chat {
+    flex: 1 1 auto; overflow-y: auto; padding: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .msg {
+    max-width: 78%; padding: 8px 12px; border-radius: 12px;
+    white-space: pre-wrap; overflow-wrap: break-word;
+    border: 1px solid var(--border);
+  }
+  .user { align-self: flex-end; background: var(--user); border-bottom-right-radius: 4px; }
+  .assistant { align-self: flex-start; background: var(--assistant); border-bottom-left-radius: 4px; }
+  .notification { align-self: flex-start; background: var(--notify); }
+  .thinking { color: var(--muted); font-style: italic; }
+  .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .actions button {
+    padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); cursor: pointer; font-size: 14px;
+  }
+  .actions button:hover { border-color: var(--accent); }
+  .ack { margin-top: 8px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 6px; }
+  footer {
+    flex: 0 0 auto; padding: 12px 16px; background: var(--panel);
+    border-top: 1px solid var(--border); display: flex; gap: 8px;
+  }
+  #input {
+    flex: 1; resize: none; padding: 9px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    font: inherit; max-height: 140px;
+  }
+  #input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  #send {
+    padding: 0 18px; border-radius: 10px; border: none; cursor: pointer;
+    background: var(--accent); color: var(--accent-text); font: inherit;
+  }
+  #send:disabled { opacity: .5; cursor: default; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧠 Second Brain Agent</h1>
+  <span id="status">подключение…</span>
+</header>
+<div id="chat"></div>
+<footer>
+  <textarea id="input" rows="1" placeholder="Напишите сообщение… (Enter — отправить, Shift+Enter — новая строка)"></textarea>
+  <button id="send">➤</button>
+</footer>
+<script>
+"use strict";
+const chat = document.getElementById("chat");
+const input = document.getElementById("input");
+const sendBtn = document.getElementById("send");
+const statusEl = document.getElementById("status");
+
+let ws = null;
+let thinkingEl = null;   // пузырь «модель думает…» с таймером
+let thinkingTimer = null;
+let thinkingSince = 0;
+const streams = {};      // msg_id → элемент пузыря стрима
+
+function scrollDown() { chat.scrollTop = chat.scrollHeight; }
+
+function bubble(cls, text) {
+  const el = document.createElement("div");
+  el.className = "msg " + cls;
+  el.textContent = text;
+  chat.appendChild(el);
+  scrollDown();
+  return el;
+}
+
+function showThinking() {
+  if (thinkingEl) return;
+  thinkingSince = Date.now();
+  thinkingEl = bubble("assistant thinking", "⏳ модель думает…");
+  thinkingTimer = setInterval(() => {
+    if (!thinkingEl) return;
+    const s = Math.round((Date.now() - thinkingSince) / 1000);
+    if (s >= 5) thinkingEl.textContent = "⏳ модель думает… (" + s + " с)";
+  }, 1000);
+}
+
+function hideThinking() {
+  if (thinkingTimer) clearInterval(thinkingTimer);
+  if (thinkingEl) thinkingEl.remove();
+  thinkingEl = null; thinkingTimer = null;
+}
+
+function addActions(el, actions) {
+  if (!actions || !actions.length) return;
+  const row = document.createElement("div");
+  row.className = "actions";
+  for (const a of actions) {
+    const btn = document.createElement("button");
+    btn.textContent = a.label;
+    btn.dataset.actionId = a.id;
+    btn.onclick = () => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({type: "action", id: a.id}));
+      row.querySelectorAll("button").forEach(b => b.disabled = true);
+    };
+    row.appendChild(btn);
+  }
+  el.appendChild(row);
+}
+
+function onServerEvent(ev) {
+  const m = JSON.parse(ev.data);
+  if (m.type === "history") {
+    chat.innerHTML = "";
+    for (const h of m.messages) bubble(h.role === "user" ? "user" : "assistant", h.text);
+  } else if (m.type === "stream_start") {
+    hideThinking();
+    streams[m.msg_id] = bubble("assistant", "");
+  } else if (m.type === "delta") {
+    const el = streams[m.msg_id];
+    if (el) { el.textContent += m.text; scrollDown(); }
+  } else if (m.type === "stream_end") {
+    hideThinking();
+    let el = streams[m.msg_id];
+    if (!el) el = bubble("assistant", "");
+    el.textContent = m.text || "(пустой ответ)";
+    delete streams[m.msg_id];
+    scrollDown();
+  } else if (m.type === "message") {
+    hideThinking();
+    const cls = m.kind === "notification" ? "notification" : "assistant";
+    const el = bubble(cls, (m.kind === "notification" ? "🔔 " : "") + m.text);
+    el.dataset.msgId = m.msg_id;
+    addActions(el, m.actions);
+  } else if (m.type === "action_result") {
+    // отклик дописываем под сообщение с этой кнопкой (как в Telegram)
+    const btn = chat.querySelector('button[data-action-id="' + CSS.escape(m.action_id) + '"]');
+    const host = btn ? btn.closest(".msg") : null;
+    const ack = document.createElement("div");
+    ack.className = "ack";
+    ack.textContent = m.text;
+    (host || bubble("assistant", "")).appendChild(ack);
+    if (host) host.querySelector(".actions")?.remove();
+    scrollDown();
+  }
+}
+
+function connect() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => { statusEl.textContent = "на связи"; statusEl.className = ""; sendBtn.disabled = false; };
+  ws.onmessage = onServerEvent;
+  ws.onclose = () => {
+    statusEl.textContent = "нет связи — переподключаюсь…";
+    statusEl.className = "off";
+    sendBtn.disabled = true;
+    hideThinking();
+    setTimeout(connect, 2000);
+  };
+}
+
+function sendMessage() {
+  const text = input.value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  bubble("user", text);
+  ws.send(JSON.stringify({type: "message", text}));
+  input.value = "";
+  input.style.height = "auto";
+  showThinking();
+}
+
+sendBtn.onclick = sendMessage;
+input.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 140) + "px";
+});
+
+connect();
+</script>
+</body>
+</html>

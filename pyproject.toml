@@ -21,6 +21,10 @@ dependencies = [
     "python-docx>=1.1",  # извлечение текста из DOCX
     "python-dateutil>=2.9",  # RRULE: валидация и вычисление следующего срабатывания
     "anthropic>=0.40",  # облачный провайдер Claude (роль chat под аккаунтом владельца)
+    "fastapi>=0.111",   # локальный web-чат (Sprint 9)
+    "uvicorn>=0.30",    # ASGI-сервер web-чата
+    "websockets>=12",   # WebSocket-транспорт uvicorn
+    "mcp>=1.2",         # Model Context Protocol: клиент-хаб и наш сервер (ADR-7)
 ]
 
 [project.optional-dependencies]
@@ -75,6 +79,13 @@ module = "anthropic.*"
 ignore_missing_imports = true
 follow_imports = "skip"
 
+# SDK MCP: декораторы low-level сервера нетипизированы, дженерики сложные —
+# трактуем как нетипизированный модуль (обращения — по документированной форме)
+[[tool.mypy.overrides]]
+module = "mcp.*"
+ignore_missing_imports = true
+follow_imports = "skip"
+
 # ── Границы модулей (архитектура: docs/03-project-structure.md) ──────────────
 [tool.importlinter]
 root_package = "sba"
@@ -83,19 +94,19 @@ root_package = "sba"
 name = "Ядро не знает о каналах и модулях"
 type = "forbidden"
 source_modules = ["sba.core"]
-forbidden_modules = ["sba.channels", "sba.modules"]
+forbidden_modules = ["sba.channels", "sba.modules", "sba.mcp"]
 
 [[tool.importlinter.contracts]]
 name = "Модули не знают о каналах"
 type = "forbidden"
 source_modules = ["sba.modules"]
-forbidden_modules = ["sba.channels"]
+forbidden_modules = ["sba.channels", "sba.mcp"]
 
 [[tool.importlinter.contracts]]
 name = "Каналы не трогают LLM напрямую"
 type = "forbidden"
 source_modules = ["sba.channels"]
-forbidden_modules = ["sba.llm"]
+forbidden_modules = ["sba.llm", "sba.mcp"]
 
 [[tool.importlinter.contracts]]
 name = "Инфраструктура не содержит предметной логики"
