@@ -141,21 +141,41 @@ class App:
                         hint="добавьте роль embedding в config/models.yaml — "
                         "поиск по документам будет только лексическим",
                     )
-                app.vectors = VectorStore.open(config.app.data_dir / "qdrant")
-                rag_service = RAGService(
-                    ChunkStore(app.db),
-                    app.vectors,
-                    app.gateway,
-                    embed_batch=rag_cfg.embed_batch,
-                )
-                for spec in build_rag_tools(
-                    rag_service,
-                    top_k=rag_cfg.search_top_k,
-                    snippet_chars=rag_cfg.snippet_chars,
-                    configured=bool(rag_cfg.sources),
-                ):
-                    registry.register(spec)
-                app.indexer = IndexerService(CatalogStore(app.db), rag_service, rag_cfg)
+                # embedded Qdrant — однопроцессный: если файлы уже открыты (чаще
+                # всего — второй запущенный экземпляр бота, либо предыдущий не
+                # завершился до конца), открытие падает блокировкой. НЕ роняем
+                # весь ассистент из-за поиска: понятно объясняем причину и
+                # работаем дальше без векторного индекса (поиск по документам —
+                # лексический, всё остальное — как обычно). Урок «внешнее не
+                # должно ронять систему», живая проверка Sprint 9
+                try:
+                    app.vectors = VectorStore.open(config.app.data_dir / "qdrant")
+                except Exception as exc:
+                    log.error("rag_vectors_locked", error=str(exc))
+                    print(
+                        "⚠️ Поисковый индекс документов занят и не открылся. Скорее "
+                        "всего ассистент УЖЕ ЗАПУЩЕН в другом окне — тогда закройте "
+                        "это окно и пользуйтесь тем. Если нет — закройте все окна "
+                        "бота, подождите несколько секунд и запустите заново.\n"
+                        "   Пока продолжаю без поиска по документам (остальное "
+                        "работает).",
+                        flush=True,
+                    )
+                if app.vectors is not None:
+                    rag_service = RAGService(
+                        ChunkStore(app.db),
+                        app.vectors,
+                        app.gateway,
+                        embed_batch=rag_cfg.embed_batch,
+                    )
+                    for spec in build_rag_tools(
+                        rag_service,
+                        top_k=rag_cfg.search_top_k,
+                        snippet_chars=rag_cfg.snippet_chars,
+                        configured=bool(rag_cfg.sources),
+                    ):
+                        registry.register(spec)
+                    app.indexer = IndexerService(CatalogStore(app.db), rag_service, rag_cfg)
 
             tasks: TasksService | None = None
             tasks_cfg = config.modules.tasks
@@ -238,9 +258,12 @@ class App:
                 # векторный recall памяти включается вместе с RAG (общий Qdrant
                 # и эмбеддер); без него память работает на FTS, как в Sprint 3.
                 # semantic=false снимает эмбеддинг-модель с горячего пути ради
-                # экономии RAM (см. modules.memory.semantic в config)
-                mem_vectors = app.vectors if memory_cfg.semantic else None
-                mem_embedder = app.gateway if memory_cfg.semantic else None
+                # экономии RAM (см. modules.memory.semantic в config).
+                # app.vectors is None — Qdrant не открылся (занят): память тоже
+                # уходит на FTS, а не падает
+                semantic_ok = memory_cfg.semantic and app.vectors is not None
+                mem_vectors = app.vectors if semantic_ok else None
+                mem_embedder = app.gateway if semantic_ok else None
                 memory_store = MemoryStore(app.db, vectors=mem_vectors, embedder=mem_embedder)
                 episode_store = EpisodeStore(app.db)
                 memory = MemoryService(memory_store, episodes=episode_store)
