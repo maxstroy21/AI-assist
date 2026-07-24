@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from urllib.parse import urlparse
 
 import structlog
 
@@ -86,6 +87,19 @@ class ModelGateway:
 
     def has_role(self, role: Role) -> bool:
         return role in self._config.roles
+
+    def chat_runtime_is_local(self) -> bool:
+        """Прогрев имеет смысл только для локальной модели (она живёт в RAM этой
+        машины). Облаку прогрев не нужен, а на бесплатных тарифах (Groq) пинг
+        раз в N минут ещё и съедает дневной лимит запросов."""
+        rc = self._config.roles.get("chat")
+        if rc is None:
+            return False
+        rt = self._config.runtimes[rc.runtime]
+        if rt.kind == "anthropic":
+            return False
+        host = urlparse(rt.base_url).hostname or ""
+        return host in ("localhost", "127.0.0.1", "::1")
 
     async def warmup(self) -> bool:
         """Держит chat-модель загруженной в RAM: запрос на 1 токен сбрасывает

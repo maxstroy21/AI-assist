@@ -41,9 +41,15 @@ def test_missing_file(tmp_path: Path) -> None:
         load_models_config(tmp_path / "models.yaml")
 
 
-def test_repo_models_yaml_is_valid() -> None:
+def test_repo_models_yaml_is_valid(monkeypatch: pytest.MonkeyPatch) -> None:
+    # реальный файл ссылается на ${GROQ_API_KEY} — в CI переменной нет,
+    # подставляем фиктивную: тест проверяет схему файла, а не ключ
+    monkeypatch.setenv("GROQ_API_KEY", "gsk-test-dummy")
     config = load_models_config(Path(__file__).parents[2] / "config" / "models.yaml")
-    assert config.roles["chat"].runtime == "ollama"
+    assert config.roles["chat"].runtime == "groq"
+    # эмбеддинги обязаны остаться локальными: у облачных провайдеров их нет,
+    # а поиск по документам не должен зависеть от облака (Local First)
+    assert config.roles["embedding"].runtime == "ollama"
 
 
 def test_anthropic_runtime_needs_no_base_url(tmp_path: Path) -> None:

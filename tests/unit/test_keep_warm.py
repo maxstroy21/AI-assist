@@ -46,6 +46,32 @@ async def test_warmup_returns_false_on_error_without_raising() -> None:
     assert await make_gateway(handler).warmup() is False
 
 
+def make_models(runtimes: dict, chat_runtime: str) -> ModelsConfig:
+    return ModelsConfig.model_validate(
+        {"runtimes": runtimes, "roles": {"chat": {"runtime": chat_runtime, "model": "m"}}}
+    )
+
+
+def test_chat_runtime_local_for_localhost_urls() -> None:
+    for url in ("http://localhost:11434/v1", "http://127.0.0.1:1234/v1"):
+        models = make_models(
+            {"ollama": {"kind": "openai_compatible", "base_url": url}}, "ollama"
+        )
+        assert ModelGateway(models).chat_runtime_is_local() is True
+
+
+def test_chat_runtime_not_local_for_cloud() -> None:
+    # облачный OpenAI-совместимый (Groq) и anthropic: прогрев не нужен,
+    # keep-warm жёг бы бесплатный дневной лимит запросов
+    groq = make_models(
+        {"groq": {"kind": "openai_compatible", "base_url": "https://api.groq.com/openai/v1"}},
+        "groq",
+    )
+    assert ModelGateway(groq).chat_runtime_is_local() is False
+    cloud = make_models({"cloud": {"kind": "anthropic", "api_key": "sk-test"}}, "cloud")
+    assert ModelGateway(cloud).chat_runtime_is_local() is False
+
+
 async def test_keep_warm_loop_pings_repeatedly() -> None:
     calls = {"n": 0}
 

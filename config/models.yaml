@@ -8,6 +8,15 @@ runtimes:
     base_url: http://localhost:11434/v1
     api_key: ""              # Ollama не требует ключа
 
+  # Groq — быстрый облачный провайдер с бесплатным лимитом (выбор владельца,
+  # 2026-07-24). Ключ живёт в переменной окружения Windows GROQ_API_KEY
+  # (setx GROQ_API_KEY "gsk_..."), в этот файл его писать НЕЛЬЗЯ — файл в git.
+  # Без переменной ассистент не стартует и честно скажет, что задать.
+  groq:
+    kind: openai_compatible
+    base_url: https://api.groq.com/openai/v1
+    api_key: "${GROQ_API_KEY}"
+
   # Облачный Claude (роль chat под аккаунтом владельца). Включается вручную:
   # раскомментируйте рантайм ниже и переназначьте на него роль chat.
   # Авторизация — вход `ant auth login` (профиль на диске, SDK берёт его сам);
@@ -27,11 +36,14 @@ runtimes:
   #   api_key: "${DEEPSEEK_API_KEY}"
 
 roles:
-  # 3b по умолчанию: на слабом CPU-only железе владельца (i7-1165G7 / 16 ГБ) 7B
-  # слишком тяжела и упирается в таймауты (docs/06 §Sprint 6). temperature 0.3:
-  # выше — чаще вставки на других языках и выдуманные списки файлов.
-  chat:       { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }
-  # Облачная модель вместо локальной (раскомментируйте нужный рантайм выше и
+  # Роль chat — облачный Groq (2026-07-24): llama-3.3-70b-versatile сильно
+  # умнее локальной 3B (меньше фабрикаций, стабильный русский, живой tool
+  # calling), ответы — секунды вместо минут. temperature 0.3 — как и раньше.
+  chat:       { runtime: groq, model: "llama-3.3-70b-versatile", temperature: 0.3 }
+  # Вернуться на локальную модель (Groq недоступен/кончился лимит): закомментируйте
+  # строку выше и раскомментируйте эту:
+  # chat:     { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }
+  # Другие облачные варианты (раскомментируйте нужный рантайм выше и
   # оставьте ОДНУ строку chat):
   # chat:     { runtime: anthropic, model: "claude-sonnet-5", max_tokens: 4096 }
   # chat:     { runtime: deepseek,  model: "deepseek-chat", temperature: 0.3 }
