@@ -464,7 +464,26 @@ class App:
             log.error("no_channels_enabled")
             return
         background: list[asyncio.Task[None]] = []
-        if self.gateway is not None and self.config.llm.keep_warm_minutes > 0:
+        if self.gateway is not None and not self.gateway.chat_runtime_is_local():
+            # облачная модель: RAM греть нечего и keep-warm не нужен (на
+            # бесплатном тарифе он бы ещё и съедал дневной лимит запросов).
+            # Но один пробный запрос делаем: ошибка ключа или сети видна
+            # сразу на старте, а не на первом вопросе владельца
+            log.info("cloud_model_check")
+            print("⏳ Проверяю доступ к облачной модели…", flush=True)
+            if await self.gateway.warmup():
+                print("✅ Модель загружена, можно писать.", flush=True)
+                log.info("model_ready")
+            else:
+                print(
+                    "⚠️ Облачная модель не ответила — проверьте интернет и "
+                    "API-ключ (переменная окружения из config/models.yaml; "
+                    "после setx нужно открыть НОВОЕ окно PowerShell). "
+                    "Подробности — строкой выше в логе.",
+                    flush=True,
+                )
+                log.warning("cloud_model_not_ready")
+        elif self.gateway is not None and self.config.llm.keep_warm_minutes > 0:
             # прогрев ДО приёма сообщений и ДО старта индексатора: первый вопрос
             # после запуска не ждёт холодную загрузку модели и не ловит ReadTimeout
             # (загрузка на CPU — минуты; в это время бот сознательно молчит)

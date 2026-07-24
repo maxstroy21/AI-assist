@@ -69,4 +69,6 @@
 ## Быстрые команды
 
 - Тесты и линтеры: `. .venv/bin/activate && pytest -q && ruff check . && mypy && lint-imports`
-- Живой smoke без модели: `printf '/tools\n/quit\n' | python -m sba`
+- Живой smoke без модели: `printf '/tools\n/quit\n' | GROQ_API_KEY=dummy python -m sba`
+  (фиктивный ключ обязателен: models.yaml ссылается на `${GROQ_API_KEY}`,
+  без переменной конфиг не загрузится)
