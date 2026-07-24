@@ -24,6 +24,9 @@ RETRIES = 3
 # read=300: холодная загрузка модели + обработка промпта на CPU занимает минуты;
 # повторов при таймауте нет, так что ждём один раз, с heartbeat в интерфейсе
 TIMEOUT = httpx.Timeout(connect=5.0, read=300.0, write=30.0, pool=10.0)
+# потолок автопаузы перед повтором: облачный лимит (429) может просить ждать
+# долго — столько в интерактивном чате не висим, честнее вернуть подсказку
+MAX_RETRY_DELAY = 20.0
 
 _DONE = object()  # сентинел конца SSE-потока
 
@@ -108,9 +111,13 @@ class OpenAICompatProvider:
                 raise LLMError(
                     f"модель не ответила за отведённое время: {exc!r}"
                 ) from exc
-            if response.status_code >= 500:
+            # 429 (лимит запросов облака) и 5xx — временные: ждём и повторяем.
+            # У 429 облако присылает Retry-After — уважаем его вместо экспоненты
+            if response.status_code == 429 or response.status_code >= 500:
                 last_error = LLMError(f"HTTP {response.status_code}: {response.text[:200]}")
-                await self._backoff(attempt, f"HTTP {response.status_code}")
+                await self._backoff(
+                    attempt, f"HTTP {response.status_code}", self._retry_after(response)
+                )
                 continue
             if response.status_code >= 400:
                 raise LLMError(f"HTTP {response.status_code}: {response.text[:200]}")
@@ -179,29 +186,34 @@ class OpenAICompatProvider:
         last_error: Exception | None = None
         for attempt in range(RETRIES):
             partial_calls: dict[int, dict[str, str]] = {}
+            retry_after: float | None = None
             try:
                 async with self._client.stream(
                     "POST", "chat/completions", json=payload
                 ) as response:
                     if response.status_code >= 400:
                         body = (await response.aread()).decode(errors="replace")[:200]
-                        if response.status_code >= 500:
+                        # 429/5xx — временные: запоминаем ошибку и уходим на
+                        # backoff внизу цикла (не continue: он пропустил бы паузу)
+                        if response.status_code == 429 or response.status_code >= 500:
                             last_error = LLMError(f"HTTP {response.status_code}: {body}")
-                            continue  # backoff ниже
-                        raise LLMError(f"HTTP {response.status_code}: {body}")
-                    async for line in response.aiter_lines():
-                        chunk = self._parse_sse_line(line)
-                        if chunk is None:
-                            continue
-                        if chunk is _DONE:
-                            break
-                        text = self._collect_delta(chunk, partial_calls)  # type: ignore[arg-type]
-                        if text:
-                            yield StreamEvent(text=text)
-                    calls = self._finalize_calls(partial_calls)
-                    if calls:
-                        yield StreamEvent(tool_calls=calls)
-                    return
+                            retry_after = self._retry_after(response)
+                        else:
+                            raise LLMError(f"HTTP {response.status_code}: {body}")
+                    else:
+                        async for line in response.aiter_lines():
+                            chunk = self._parse_sse_line(line)
+                            if chunk is None:
+                                continue
+                            if chunk is _DONE:
+                                break
+                            text = self._collect_delta(chunk, partial_calls)  # type: ignore[arg-type]
+                            if text:
+                                yield StreamEvent(text=text)
+                        calls = self._finalize_calls(partial_calls)
+                        if calls:
+                            yield StreamEvent(tool_calls=calls)
+                        return
             except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
                 last_error = exc  # не достучались — повтор осмыслен
             except httpx.TransportError as exc:
@@ -210,7 +222,7 @@ class OpenAICompatProvider:
                 raise LLMError(
                     f"модель не ответила за отведённое время: {exc!r}"
                 ) from exc
-            await self._backoff(attempt, str(last_error))
+            await self._backoff(attempt, str(last_error), retry_after)
         raise LLMError(f"модель недоступна после {RETRIES} попыток: {last_error}")
 
     # ── разбор ответа ────────────────────────────────────────────────────────
@@ -285,8 +297,23 @@ class OpenAICompatProvider:
             raise LLMError(f"некорректный ответ модели: {str(data)[:200]}") from exc
 
     @staticmethod
-    async def _backoff(attempt: int, reason: str) -> None:
+    def _retry_after(response: httpx.Response) -> float | None:
+        """Сколько ждать по заголовку Retry-After (облако присылает его на 429).
+        Возвращает секунды или None, если заголовка нет/он не число."""
+        header = response.headers.get("retry-after")
+        if not header:
+            return None
+        try:
+            return float(header)
+        except ValueError:
+            return None  # HTTP-дата в Retry-After нам не встречается — игнорируем
+
+    @staticmethod
+    async def _backoff(attempt: int, reason: str, retry_after: float | None = None) -> None:
         if attempt < RETRIES - 1:
-            delay = 2.0**attempt
+            # если облако назвало паузу (429) — уважаем её, но не висим дольше
+            # потолка; иначе экспонента 1, 2, 4…
+            base = retry_after if retry_after is not None else 2.0**attempt
+            delay = min(base, MAX_RETRY_DELAY)
             log.warning("llm_retry", attempt=attempt + 1, delay=delay, reason=reason)
             await asyncio.sleep(delay)

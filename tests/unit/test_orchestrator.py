@@ -25,8 +25,15 @@ class StubHistory:
 
 
 class FailingLLM:
+    def __init__(self, error: str = "нет соединения", local: bool = True) -> None:
+        self._error = error
+        self._local = local
+
+    def chat_runtime_is_local(self) -> bool:
+        return self._local
+
     async def chat(self, role: Role, messages: list[ChatMessage]):  # pragma: no cover
-        raise LLMError("нет соединения")
+        raise LLMError(self._error)
 
     async def stream(
         self,
@@ -35,7 +42,7 @@ class FailingLLM:
         tools: list[ToolSchema] | None = None,
         tool_choice: str | None = None,
     ) -> AsyncIterator[StreamEvent]:
-        raise LLMError("нет соединения")
+        raise LLMError(self._error)
         yield StreamEvent()  # unreachable, делает функцию генератором
 
 
@@ -159,9 +166,24 @@ async def test_history_trimmed_to_budget_keeps_latest(db: Database) -> None:
     assert messages[-1].content == "свежий вопрос"
 
 
-async def test_llm_failure_becomes_friendly_message(db: Database) -> None:
-    text = await collect(make_orchestrator(FailingLLM(), db))
+async def test_llm_failure_local_hint_mentions_ollama(db: Database) -> None:
+    text = await collect(make_orchestrator(FailingLLM(local=True), db))
     assert "⚠️" in text
+    assert "Ollama" in text
+
+
+async def test_llm_failure_cloud_429_hint_mentions_limit_not_ollama(db: Database) -> None:
+    llm = FailingLLM(error="HTTP 429: rate limit", local=False)
+    text = await collect(make_orchestrator(llm, db))
+    assert "лимит" in text.lower()
+    assert "Ollama" not in text  # облаку подсказка про Ollama не к месту
+
+
+async def test_llm_failure_cloud_generic_hint_mentions_key(db: Database) -> None:
+    llm = FailingLLM(error="HTTP 401: bad key", local=False)
+    text = await collect(make_orchestrator(llm, db))
+    assert "ключ" in text.lower()
+    assert "Ollama" not in text
 
 
 async def test_service_command_tools_bypasses_llm(db: Database) -> None:
