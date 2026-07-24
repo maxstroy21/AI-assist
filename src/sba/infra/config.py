@@ -279,6 +279,25 @@ class BackupConfig(_Strict):
         return v
 
 
+class HealthConfig(_Strict):
+    """Health-мониторинг фоновых компонентов (Sprint 10): самоотчёт в TG,
+    если индексатор/планировщик/консолидация памяти замолчали."""
+
+    enabled: bool = True
+    check_interval_seconds: float = 120.0  # как часто проверять молчание
+    # порог «завис» = интервал компонента × это, но не меньше min_silence_seconds:
+    # нормальная пауза цикла (и разовая долгая работа) не должна считаться сбоем
+    grace_multiplier: float = 10.0
+    min_silence_seconds: float = 300.0     # пол тревоги: раньше 5 минут не паникуем
+
+    @field_validator("check_interval_seconds", "grace_multiplier", "min_silence_seconds")
+    @classmethod
+    def _positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("значение должно быть > 0")
+        return v
+
+
 class McpServerEntry(_Strict):
     """Внешний MCP-сервер (Sprint 9): его инструменты попадают в общий Tool
     Registry и подчиняются тем же уровням риска (ADR-7, ADR-10)."""
@@ -340,6 +359,7 @@ class ModulesConfig(_Strict):
     reminders: RemindersConfig = RemindersConfig()
     fileops: FileOpsConfig = FileOpsConfig()
     backup: BackupConfig = BackupConfig()
+    health: HealthConfig = HealthConfig()
 
 
 class LLMBehaviorConfig(_Strict):

@@ -37,6 +37,26 @@ def collector(bus: EventBus) -> list[JobFired]:
     return fired
 
 
+async def test_run_forever_calls_heartbeat(db: Database) -> None:
+    import asyncio
+
+    beats = {"n": 0}
+    scheduler = make(db, EventBus())
+    scheduler._tick_seconds = 0.01  # быстрый цикл для теста
+
+    def beat() -> None:
+        beats["n"] += 1
+
+    task = asyncio.create_task(scheduler.run_forever(beat))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    assert beats["n"] >= 2  # каждый виток цикла подаёт сигнал жизни health-монитору
+
+
 async def test_one_shot_fires_once_and_disappears(db: Database) -> None:
     bus = EventBus()
     scheduler = make(db, bus)

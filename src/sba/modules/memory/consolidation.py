@@ -27,6 +27,7 @@ import asyncio
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -248,8 +249,10 @@ class MemoryConsolidator:
 
     # ── цикл ─────────────────────────────────────────────────────────────────
 
-    async def run_forever(self) -> None:
+    async def run_forever(self, heartbeat: Callable[[], None] | None = None) -> None:
         while True:
+            if heartbeat is not None:  # сигнал жизни health-монитору (Sprint 10)
+                heartbeat()
             try:
                 await asyncio.wait_for(
                     self._wake.wait(), timeout=self._config.check_interval_seconds

@@ -19,6 +19,7 @@ Misfire (срабатывание пропущено — приложение н
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, tzinfo
 
 import structlog
@@ -89,8 +90,10 @@ class SchedulerService:
 
     # ── цикл ─────────────────────────────────────────────────────────────────
 
-    async def run_forever(self) -> None:
+    async def run_forever(self, heartbeat: Callable[[], None] | None = None) -> None:
         while True:
+            if heartbeat is not None:  # сигнал жизни health-монитору (Sprint 10)
+                heartbeat()
             try:
                 await self.tick()
             except Exception as exc:  # цикл не должен умирать от одного сбоя
