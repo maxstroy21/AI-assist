@@ -51,6 +51,33 @@ def test_absolute_data_dir_kept_as_is(tmp_path):
     assert resolved == absolute
 
 
+MINIMAL_MODELS = (
+    "runtimes:\n  ollama:\n    kind: openai_compatible\n"
+    "    base_url: http://localhost:11434/v1\n    api_key: ''\n"
+    "roles:\n"
+    "  chat: {runtime: ollama, model: qwen2.5:3b-instruct}\n"
+    "  extraction: {runtime: ollama, model: qwen2.5:3b-instruct}\n"
+    "  embedding: {runtime: ollama, model: bge-m3}\n"
+)
+
+
+async def test_rag_export_never_touches_embedded_qdrant(tmp_path, db):
+    """Урок живой проверки: embedded Qdrant держит основное приложение, второй
+    процесс его не откроет (portalocker виснет/падает). Экспортный сервер
+    обязан регистрировать search_documents, но НЕ создавать файлы qdrant —
+    поиск идёт лексически (FTS по общей SQLite)."""
+    config = make_config(tmp_path, ["rag"])
+    (tmp_path / "models.yaml").write_text(MINIMAL_MODELS, encoding="utf-8")
+    registry, gateway = build_export_registry(config, tmp_path, db)
+    names = {spec.name for spec in registry.available()}
+    assert "search_documents" in names
+    # ключевое: на диске не появилось векторное хранилище — значит его не
+    # открывали и не заблокировали бы работающий бот
+    assert not (tmp_path / "data" / "qdrant").exists()
+    if gateway is not None:
+        await gateway.aclose()
+
+
 async def test_export_by_module_list(tmp_path, db):
     config = make_config(tmp_path, ["basic", "files", "memory"])
     registry, gateway = build_export_registry(config, tmp_path, db)

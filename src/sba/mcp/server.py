@@ -91,7 +91,6 @@ def build_export_registry(
     audit = AuditLog(db)
     registry = ToolRegistry(audit)
     tz = ZoneInfo(config.app.timezone)
-    data_dir = resolve_data_dir(config, config_dir)
 
     gateway: ModelGateway | None = None
 
@@ -109,15 +108,20 @@ def build_export_registry(
             specs.extend(FilesToolset(config.files).build_tools())
         elif module == "rag":
             rag_cfg = config.modules.rag
-            try:
-                vectors = VectorStore.open(data_dir / "qdrant")
-            except Exception as exc:
-                # embedded Qdrant уже открыт основным приложением — работаем
-                # с пустым векторным стором: поиск деградирует до FTS
-                log.warning(
-                    "mcp_vectors_busy", error=str(exc), hint="поиск будет лексическим"
-                )
-                vectors = VectorStore.in_memory()
+            # Embedded Qdrant — ОДНОПРОЦЕССНЫЙ, и основное приложение почти
+            # всегда держит его открытым (у владельца ~40k точек). Второй
+            # процесс не может разделить те же файлы: на Windows блокировка
+            # portalocker виснет или падает (урок живой проверки Sprint 9),
+            # а try/except не спасает от зависания. Поэтому экспортный сервер
+            # НЕ трогает векторное хранилище вовсе — берёт пустой in-memory,
+            # и поиск по документам идёт лексически (FTS по ОБЩЕЙ SQLite, где
+            # лежат реальные проиндексированные тексты). Это заложенная в DoD
+            # штатная деградация «поиск по словам, когда бот запущен».
+            vectors = VectorStore.in_memory()
+            log.info(
+                "mcp_rag_lexical_only",
+                reason="embedded Qdrant занят основным приложением — FTS-поиск",
+            )
             rag = RAGService(
                 ChunkStore(db), vectors, get_gateway(), embed_batch=rag_cfg.embed_batch
             )
