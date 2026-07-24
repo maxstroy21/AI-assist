@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,36 @@ async def test_add_and_search_with_russian_morphology(store: MemoryStore) -> Non
     found = await store.search("owner", "что известно про Ивана?")
     assert len(found) == 1
     assert found[0].subject == "Иван Петров"
+
+
+class _SlowEmbedder:
+    """Эмулирует холодную bge-m3 на CPU: эмбеддинг медленнее потолка recall."""
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        await asyncio.sleep(0.2)
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+
+class _NoopVectors:
+    async def ensure_collection(self, *a, **k) -> None: ...
+    async def upsert(self, *a, **k) -> None: ...
+    async def delete(self, *a, **k) -> None: ...
+
+    async def search(self, *a, **k):  # до сюда не доходим — эмбеддинг таймаутит
+        raise AssertionError("векторный поиск не должен вызываться при таймауте")
+
+
+async def test_slow_semantic_recall_falls_back_to_lexical(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """recall не виснет на холодной bge-m3: семантическая половина под таймаутом,
+    при превышении отдаёт быстрые лексические результаты (живая проверка: recall
+    «думал» 60 с на загрузке эмбеддинг-модели)."""
+    monkeypatch.setattr("sba.modules.memory.store.VECTOR_SEARCH_TIMEOUT", 0.05)
+    store = MemoryStore(db, vectors=_NoopVectors(), embedder=_SlowEmbedder())
+    await store.add("owner", "project", "статус ППЭЭ", "проект ППЭЭ в активной фазе")
+    found = await store.search("owner", "какой статус у ППЭЭ")
+    assert found and "ППЭЭ" in found[0].subject  # лексический результат получен
 
 
 async def test_search_by_content_words(store: MemoryStore) -> None:
