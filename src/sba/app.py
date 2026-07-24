@@ -17,6 +17,7 @@ import structlog
 from sba import __version__
 from sba.channels.cli.repl import CliChannel
 from sba.channels.telegram.gateway import TelegramChannel
+from sba.channels.webchat.gateway import WebChatChannel
 from sba.core.agent.orchestrator import AgentOrchestrator
 from sba.core.events import EventBus, MessageReceived, SessionClosed
 from sba.core.history import HistoryStore
@@ -31,6 +32,7 @@ from sba.infra.logging import setup_logging
 from sba.infra.vectors import VectorStore
 from sba.llm.config import load_models_config
 from sba.llm.service import ModelGateway
+from sba.mcp.client_hub import MCPClientHub
 from sba.modules.basic.tools import build_tools as build_basic_tools
 from sba.modules.files.ops import FileOpsService
 from sba.modules.files.opsstore import FileOpsStore
@@ -90,6 +92,7 @@ class App:
         self.reminders: ReminderService | None = None
         self.brief: MorningBrief | None = None
         self.consolidator: MemoryConsolidator | None = None
+        self.mcp_hub: MCPClientHub | None = None
         self.channels: list[ChannelAdapter] = []
 
     @classmethod
@@ -268,6 +271,13 @@ class App:
                             hint="нужны роли extraction и summarize в config/models.yaml",
                         )
 
+            # MCP Client Hub (Sprint 9): инструменты внешних серверов попадают
+            # в общий реестр с риском из конфига; недоступный сервер — warning,
+            # не отказ старта
+            if config.mcp.servers:
+                app.mcp_hub = MCPClientHub(config.mcp.servers)
+                await app.mcp_hub.start(registry)
+
             processor = AgentOrchestrator(
                 gateway=app.gateway,
                 history=HistoryStore(app.db),
@@ -277,6 +287,9 @@ class App:
                 timezone=config.app.timezone,
                 memory=memory,
                 extra_commands=app._build_extra_commands(rag_service, tasks, memory, fileops),
+                extra_always_modules=(
+                    app.mcp_hub.module_names if app.mcp_hub is not None else None
+                ),
             )
 
             if app.indexer is not None:
@@ -316,6 +329,40 @@ class App:
             app.router.register_channel(telegram)
             app.channels.append(telegram)
 
+        if config.channels.web.enabled:
+            web_cfg = config.channels.web
+            if web_cfg.host not in ("127.0.0.1", "localhost", "::1"):
+                log.warning(
+                    "web_chat_non_local_host",
+                    host=web_cfg.host,
+                    hint="аутентификации в web-чате нет — не открывайте его в сеть",
+                )
+            db = app.db
+            history_store = HistoryStore(db)
+
+            async def web_history() -> list[dict[str, str]]:
+                # история активного разговора web-канала для новой вкладки
+                row = await db.fetch_one(
+                    "SELECT id FROM conversations"
+                    " WHERE user_id=? AND channel=? AND closed_at IS NULL"
+                    " ORDER BY started_at DESC LIMIT 1",
+                    ("local", "web"),
+                )
+                if row is None:
+                    return []
+                entries = await history_store.recent(row["id"], web_cfg.history_messages)
+                return [{"role": e.role, "text": e.content} for e in entries]
+
+            web = WebChatChannel(
+                host=web_cfg.host,
+                port=web_cfg.port,
+                handle_incoming=app.router.handle_incoming,
+                handle_action=app.router.handle_action,
+                fetch_history=web_history,
+            )
+            app.router.register_channel(web)
+            app.channels.append(web)
+
         return app
 
     def _notify_targets(self) -> list[tuple[str, str]]:
@@ -326,6 +373,8 @@ class App:
             targets.append(("telegram", str(telegram_cfg.allowed_user_ids[0])))
         if self.config.channels.cli.enabled:
             targets.append(("cli", "local"))
+        if self.config.channels.web.enabled:
+            targets.append(("web", "local"))
         return targets
 
     def _build_extra_commands(
@@ -427,6 +476,8 @@ class App:
     async def shutdown(self) -> None:
         for channel in self.channels:
             await channel.stop()
+        if self.mcp_hub is not None:
+            await self.mcp_hub.stop()
         if self.gateway is not None:
             await self.gateway.aclose()
         if self.vectors is not None:

@@ -29,13 +29,20 @@ class ToolSpec:
     risk: RiskLevel
     module: str
     handler: Callable[[BaseModel], Awaitable[str]]
+    # Готовая JSON Schema аргументов вместо генерации из args_schema — для
+    # MCP-тулов (Sprint 9): внешний сервер уже прислал схему, а args_schema
+    # тогда — «пропускающая» модель (валидацию делает сам внешний сервер)
+    json_schema: dict[str, Any] | None = None
 
     def to_openai(self) -> dict[str, Any]:
-        schema = self.args_schema.model_json_schema()
-        schema.pop("title", None)
-        for prop in schema.get("properties", {}).values():
-            if isinstance(prop, dict):
-                prop.pop("title", None)
+        if self.json_schema is not None:
+            schema = self.json_schema
+        else:
+            schema = self.args_schema.model_json_schema()
+            schema.pop("title", None)
+            for prop in schema.get("properties", {}).values():
+                if isinstance(prop, dict):
+                    prop.pop("title", None)
         return {
             "type": "function",
             "function": {

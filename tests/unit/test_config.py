@@ -81,3 +81,61 @@ def test_missing_default_yaml(tmp_path: Path) -> None:
 def test_repo_default_yaml_is_valid() -> None:
     config = load_config(Path(__file__).parents[2] / "config", environ={})
     assert config.channels.cli.enabled is True
+
+
+def test_web_channel_defaults_and_validation(tmp_path: Path) -> None:
+    write(tmp_path / "default.yaml", "app:\n  timezone: Europe/Moscow\n")
+    config = load_config(tmp_path, environ={})
+    web = config.channels.web
+    assert web.enabled is False
+    assert (web.host, web.port) == ("127.0.0.1", 8765)
+    write(tmp_path / "local.yaml", "channels:\n  web:\n    port: 70000\n")
+    with pytest.raises(ConfigError):
+        load_config(tmp_path, environ={})
+
+
+def test_mcp_defaults(tmp_path: Path) -> None:
+    write(tmp_path / "default.yaml", "app:\n  timezone: Europe/Moscow\n")
+    config = load_config(tmp_path, environ={})
+    assert config.mcp.servers == []
+    assert config.mcp.export_modules == ["rag", "memory", "tasks"]
+
+
+def test_mcp_server_entry_parsed(tmp_path: Path) -> None:
+    write(
+        tmp_path / "default.yaml",
+        "mcp:\n  servers:\n    - name: git\n      command: uvx\n"
+        "      args: [mcp-server-git]\n      risk: read\n"
+        "      tool_risks:\n        git_commit: destructive\n",
+    )
+    config = load_config(tmp_path, environ={})
+    server = config.mcp.servers[0]
+    assert (server.name, server.command, server.risk) == ("git", "uvx", "read")
+    assert server.tool_risks == {"git_commit": "destructive"}
+
+
+def test_mcp_entry_requires_exactly_one_transport(tmp_path: Path) -> None:
+    write(
+        tmp_path / "default.yaml",
+        "mcp:\n  servers:\n    - name: bad\n      command: uvx\n"
+        "      url: http://localhost:1234/mcp\n",
+    )
+    with pytest.raises(ConfigError):
+        load_config(tmp_path, environ={})
+    write(
+        tmp_path / "default.yaml",
+        "mcp:\n  servers:\n    - name: empty\n",
+    )
+    with pytest.raises(ConfigError):
+        load_config(tmp_path, environ={})
+
+
+def test_mcp_duplicate_server_names_rejected(tmp_path: Path) -> None:
+    write(
+        tmp_path / "default.yaml",
+        "mcp:\n  servers:\n"
+        "    - name: git\n      command: uvx\n"
+        "    - name: git\n      command: npx\n",
+    )
+    with pytest.raises(ConfigError):
+        load_config(tmp_path, environ={})
