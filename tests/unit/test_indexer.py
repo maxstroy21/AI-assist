@@ -164,6 +164,49 @@ async def test_hidden_dirs_and_foreign_extensions_skipped(
     assert [u[1] for u in index.upserts] == [str(source / "real.txt")]
 
 
+async def test_office_lock_files_skipped(db: Database, tmp_path: Path) -> None:
+    # Excel/Word держат «~$Имя.xlsx» открытыми — их нельзя ни хэшировать, ни читать
+    source = tmp_path / "docs"
+    source.mkdir()
+    (source / "~$Шаблон.xlsx").write_bytes(b"lock owner file")
+    (source / "real.txt").write_text("Настоящий документ.", "utf-8")
+    index = FakeIndex()
+    indexer, _ = make_indexer(db, source, index)
+    enqueued, _ = await indexer.scan_once()
+    assert enqueued == 1  # временный lock-файл не попал в очередь
+    await indexer.process_queue()
+    assert [u[1] for u in index.upserts] == [str(source / "real.txt")]
+
+
+async def test_locked_file_does_not_crash_scan(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # реальный файл, открытый в Excel, недоступен для чтения (PermissionError):
+    # он не должен ронять весь скан — остальные файлы обязаны проиндексироваться
+    from sba.modules.indexer import service as svc
+
+    source = tmp_path / "docs"
+    source.mkdir()
+    (source / "open_in_excel.xlsx").write_bytes(b"xlsx-ish")
+    (source / "real.txt").write_text("Документ рядом с заблокированным.", "utf-8")
+
+    real_hash = svc._file_hash
+
+    def maybe_locked(path: Path) -> str:
+        if path.name == "open_in_excel.xlsx":
+            raise PermissionError("файл открыт в Excel")
+        return real_hash(path)
+
+    monkeypatch.setattr(svc, "_file_hash", maybe_locked)
+
+    index = FakeIndex()
+    indexer, _ = make_indexer(db, source, index)
+    enqueued, _ = await indexer.scan_once()  # не падает на заблокированном файле
+    assert enqueued == 1
+    await indexer.process_queue()
+    assert [u[1] for u in index.upserts] == [str(source / "real.txt")]
+
+
 async def test_stats_text_reports_state(db: Database, tmp_path: Path) -> None:
     source = tmp_path / "docs"
     source.mkdir()

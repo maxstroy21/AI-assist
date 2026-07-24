@@ -1,9 +1,15 @@
+import datetime as dt
 from pathlib import Path
 
 import docx as docx_lib
+import openpyxl
 import pytest
 
-from sba.modules.indexer.extractors import ExtractError, extract
+from sba.modules.indexer.extractors import (
+    XLSX_MAX_ROWS_PER_SHEET,
+    ExtractError,
+    extract,
+)
 
 
 def build_minimal_pdf(text: str) -> bytes:
@@ -60,13 +66,88 @@ def test_markdown_headings_and_frontmatter(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     blocks = extract(file)
+    # frontmatter-теги вынесены в отдельный блок вверху, проза — как раньше
     assert [b.locator for b in blocks] == [
+        "теги",
         "",
         "раздел «План экспедиции»",
         "раздел «Бюджет»",
     ]
-    assert "tags" not in blocks[0].text  # frontmatter пропущен
-    assert "Ладоге" in blocks[1].text
+    assert blocks[0].text == "Теги: #test"
+    assert "tags" not in blocks[1].text  # тело прозы не содержит frontmatter
+    assert blocks[1].text == "Вступление без заголовка."
+    assert "Ладоге" in blocks[2].text
+
+
+def test_markdown_obsidian_tags_and_wikilinks(tmp_path: Path) -> None:
+    file = tmp_path / "note.md"
+    file.write_text(
+        "---\ntags:\n  - экспедиция\n  - ладога\n---\n"
+        "# Заметка\n"
+        "Идём с #байдарка и #экспедиция к [[Ладожское озеро]].\n"
+        "См. также [[Снаряжение|список вещей]] и [[Ладога#Маршрут]].\n",
+        encoding="utf-8",
+    )
+    blocks = extract(file)
+    tags_block = next(b for b in blocks if b.locator == "теги")
+    # frontmatter + инлайновые, дедуп регистронезависимый, порядок сохранён
+    assert tags_block.text == "Теги: #экспедиция #ладога #байдарка"
+    links_block = next(b for b in blocks if b.locator == "связи")
+    # алиас отброшен (берётся цель), якорь #Раздел отброшен, дедуп по имени
+    assert links_block.text == "Связи: Ладожское озеро, Снаряжение, Ладога"
+
+
+def test_markdown_no_tags_no_meta_blocks(tmp_path: Path) -> None:
+    file = tmp_path / "plain.md"
+    file.write_text("# Просто заметка\nБез тегов и ссылок.\n", encoding="utf-8")
+    blocks = extract(file)
+    assert [b.locator for b in blocks] == ["раздел «Просто заметка»"]
+
+
+def test_xlsx_sheets_and_values(tmp_path: Path) -> None:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Бюджет"
+    sheet.append(["Статья", "Сумма", "Дата"])
+    sheet.append(["Снаряжение", 100000, dt.datetime(2026, 7, 22)])
+    sheet.append([None, None, None])  # пустая строка — пропускается
+    sheet.append(["Итого", 100000.0, None])
+    second = workbook.create_sheet("Пусто")  # лист без данных — без блока
+    second["A1"] = None
+    file = tmp_path / "plan.xlsx"
+    workbook.save(str(file))
+
+    blocks = extract(file)
+    assert [b.locator for b in blocks] == ["лист «Бюджет»"]
+    text = blocks[0].text
+    assert "Статья │ Сумма │ Дата" in text
+    assert "Снаряжение │ 100000 │ 2026-07-22" in text  # float→int, дата ISO
+    assert "Итого │ 100000" in text
+    assert "None" not in text  # пустые ячейки не просачиваются
+
+
+def test_xlsx_formula_uses_cached_value(tmp_path: Path) -> None:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet["A1"] = 2
+    sheet["A2"] = 3
+    sheet["A3"] = "=A1+A2"
+    file = tmp_path / "calc.xlsx"
+    workbook.save(str(file))
+    # openpyxl без пересчёта: у формулы нет кэша → приходит пусто, а не «=A1+A2»
+    text = "\n".join(b.text for b in extract(file))
+    assert "=A1+A2" not in text  # текст формулы в поиск не попадает
+
+
+def test_xlsx_row_cap(tmp_path: Path) -> None:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    for i in range(XLSX_MAX_ROWS_PER_SHEET + 50):
+        sheet.append([f"строка {i}"])
+    file = tmp_path / "big.xlsx"
+    workbook.save(str(file))
+    blocks = extract(file)
+    assert "лист обрезан" in blocks[0].text
 
 
 def test_pdf_pages(tmp_path: Path) -> None:
