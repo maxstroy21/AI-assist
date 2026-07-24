@@ -27,7 +27,7 @@ from sba.core.tools.registry import ConfirmationRequired, ToolRegistry
 from sba.core.types import IncomingMessage, MemoryPort, Reply, Session
 from sba.infra.audit import AuditLog
 from sba.infra.config import AgentConfig
-from sba.llm.gateway import ChatMessage, LLMError, LLMGateway, ToolCall
+from sba.llm.gateway import ChatMessage, LLMError, LLMGateway, ToolCall, ToolChoiceError
 from sba.llm.toolcalling import parse_tool_call_text
 
 log = structlog.get_logger(__name__)
@@ -342,6 +342,9 @@ class AgentOrchestrator:
         force_pending = force_first_tool
         forced_retry_used = False
         json_retry_used = False
+        # topic-scoped набор урезан по теме; строгий облачный бэкенд (Groq)
+        # отклоняет вызов тула вне набора — тогда один раз расширяем до всех
+        tool_scope_widened = allowed_modules is None
         any_tool_executed = False
         try:
             for iteration in range(self._config.max_tool_iterations):
@@ -358,31 +361,44 @@ class AgentOrchestrator:
                 # сырой служебный формат. live: None=нюхаем, True=стримим, False=держим.
                 live: bool | None = False if buffering else None
                 sniff = ""
-                async for event in self._gateway.stream(
-                    "chat", messages, tools=tools, tool_choice=tool_choice
-                ):
-                    if event.text:
-                        raw_text.append(event.text)
-                        if live is None:
-                            sniff += event.text
-                            head = sniff.lstrip()
-                            if head:
-                                if head[0] in "{[":
-                                    live = False  # похоже на JSON-вызов — придержать
-                                else:
-                                    live = True
-                                    cleaned = strip_cjk(sniff)  # языковой барьер
-                                    if cleaned:
-                                        shown_any = True
-                                        yield cleaned
-                                    sniff = ""
-                        elif live:
-                            cleaned = strip_cjk(event.text)  # языковой барьер
-                            if cleaned:
-                                shown_any = True
-                                yield cleaned
-                    if event.tool_calls:
-                        tool_calls = event.tool_calls
+                try:
+                    async for event in self._gateway.stream(
+                        "chat", messages, tools=tools, tool_choice=tool_choice
+                    ):
+                        if event.text:
+                            raw_text.append(event.text)
+                            if live is None:
+                                sniff += event.text
+                                head = sniff.lstrip()
+                                if head:
+                                    if head[0] in "{[":
+                                        live = False  # похоже на JSON-вызов — придержать
+                                    else:
+                                        live = True
+                                        cleaned = strip_cjk(sniff)  # языковой барьер
+                                        if cleaned:
+                                            shown_any = True
+                                            yield cleaned
+                                        sniff = ""
+                            elif live:
+                                cleaned = strip_cjk(event.text)  # языковой барьер
+                                if cleaned:
+                                    shown_any = True
+                                    yield cleaned
+                        if event.tool_calls:
+                            tool_calls = event.tool_calls
+                except ToolChoiceError as exc:
+                    # topic-scoped набор оказался узок: модель позвала инструмент
+                    # вне него, строгий бэкенд (Groq) отклонил ход. Один раз
+                    # расширяем до всех инструментов и повторяем шаг — показать
+                    # ничего не успели, дублей не будет. Экономия тулов не должна
+                    # ронять запрос, когда модель тянется за другим инструментом
+                    if not tool_scope_widened and not shown_any:
+                        tool_scope_widened = True
+                        tools = self._registry.openai_schemas(None)
+                        log.info("tool_scope_widened_after_reject", detail=str(exc)[:200])
+                        continue
+                    raise
 
                 joined = "".join(raw_text).strip()
                 if not tool_calls:
@@ -508,6 +524,11 @@ class AgentOrchestrator:
         для облака — про лимит/сеть/ключ. Урок: сообщение об ошибке не должно
         уводить владельца чинить не то (Ollama при работающем облаке)."""
         head = f"⚠️ Не получилось обратиться к модели: {exc}\n"
+        if isinstance(exc, ToolChoiceError):
+            return (
+                "⚠️ Модель попыталась вызвать инструмент, недоступный для этого "
+                "запроса. Обычно это самоисправляется — просто повторите сообщение."
+            )
         if self._gateway.chat_runtime_is_local():
             return (
                 f"{head}Если это первый вопрос после простоя или запуска — модель "

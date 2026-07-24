@@ -348,6 +348,53 @@ async def test_topic_scoped_general_message_gets_no_tools(db: Database) -> None:
     assert not (llm.seen_tools[0] or [])
 
 
+class WidenProbeLLM:
+    """Эмулирует строгий облачный бэкенд (Groq): если в наборе нет нужного
+    инструмента — отклоняет ход (ToolChoiceError); когда набор расширили —
+    вызывает инструмент, затем отвечает текстом."""
+
+    def __init__(self) -> None:
+        self.seen_tools: list[list[ToolSchema] | None] = []
+        self._after_widen = 0
+
+    def chat_runtime_is_local(self) -> bool:
+        return False
+
+    async def chat(self, role: Role, messages: list[ChatMessage]):  # pragma: no cover
+        raise LLMError("не используется")
+
+    async def stream(
+        self, role: Role, messages: list[ChatMessage],
+        tools: list[ToolSchema] | None = None, tool_choice: str | None = None,
+    ) -> AsyncIterator[StreamEvent]:
+        from sba.llm.gateway import ToolChoiceError
+
+        self.seen_tools.append(tools)
+        names = {t["function"]["name"] for t in (tools or [])}
+        if "create_task" not in names:
+            raise ToolChoiceError(
+                "attempted to call tool 'create_task' which was not in request.tools"
+            )
+        self._after_widen += 1
+        if self._after_widen == 1:
+            yield StreamEvent(tool_calls=[ToolCall(id="c1", name="create_task", arguments={})])
+        else:
+            yield StreamEvent(text="задача создана")
+
+
+async def test_tool_choice_rejection_widens_tool_scope_and_recovers(db: Database) -> None:
+    """topic_scoped урезал набор, модель позвала тул вне него, облако отклонило —
+    оркестратор расширяет набор до всех и доводит ход (баг живой проверки)."""
+    llm = WidenProbeLLM()
+    tools = [_module_tool("list_files", "files"), _module_tool("create_task", "tasks")]
+    orch = make_orchestrator(llm, db, tools=tools, topic_scoped_tools=True)
+    reply = await collect(orch, "покажи файлы в загрузках")
+    assert "задача создана" in reply
+    # первый (узкий) набор — без create_task; после расширения — с ним
+    assert "create_task" not in {t["function"]["name"] for t in (llm.seen_tools[0] or [])}
+    assert "create_task" in {t["function"]["name"] for t in (llm.seen_tools[1] or [])}
+
+
 async def test_tools_unscoped_by_default(db: Database) -> None:
     """Без флага поведение прежнее: модель видит все инструменты всегда."""
     llm = FakeLLM(replies=["ответ"])

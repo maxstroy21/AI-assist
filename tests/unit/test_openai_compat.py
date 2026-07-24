@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from sba.llm.gateway import ChatMessage, LLMError
+from sba.llm.gateway import ChatMessage, LLMError, ToolChoiceError
 from sba.llm.providers.openai_compat import OpenAICompatProvider
 
 
@@ -203,6 +203,36 @@ async def test_tool_call_double_encoded_arguments_recovered() -> None:
 
     events = [e async for e in make_provider(handler).stream("m", MSGS, tools=[{}])]
     assert events[-1].tool_calls[0].arguments == {"name_pattern": "a"}
+
+
+async def test_stream_tool_use_failed_becomes_tool_choice_error() -> None:
+    # Groq строго валидирует тулы: вызов тула вне набора → ошибка в 200-потоке
+    err = {
+        "error": {
+            "message": "tool call validation failed: attempted to call tool "
+            "'recall_memory' which was not in request.tools",
+            "code": "tool_use_failed",
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=f"data: {json.dumps(err)}\n\n".encode())
+
+    with pytest.raises(ToolChoiceError, match="recall_memory"):
+        async for _ in make_provider(handler).stream("m", MSGS, tools=[{}]):
+            pass
+
+
+async def test_stream_generic_error_chunk_is_clean_llm_error() -> None:
+    err = {"error": {"message": "context length exceeded", "code": "context_length"}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=f"data: {json.dumps(err)}\n\n".encode())
+
+    with pytest.raises(LLMError, match="context length") as info:
+        async for _ in make_provider(handler).stream("m", MSGS):
+            pass
+    assert not isinstance(info.value, ToolChoiceError)
 
 
 async def test_4xx_fails_without_retry() -> None:
