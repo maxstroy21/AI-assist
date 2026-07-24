@@ -359,6 +359,64 @@ async def test_text_json_tool_call_salvaged(db: Database) -> None:
     assert text.endswith("готово по данным инструмента")
 
 
+async def test_json_array_tool_calls_not_leaked(db: Database) -> None:
+    # случай живой проверки Sprint 8: после реального вызова 7B выдала массив
+    # вызовов JSON-текстом — раньше он утекал сырым в чат
+    executed: list[str] = []
+    array = (
+        '[{"name": "search_documents", "arguments": {"query": "Рейтингование"}}, '
+        '{"name": "search_documents", "arguments": {"query": "Гранты"}}]'
+    )
+    llm = FakeLLM(
+        replies=[
+            [ToolCall(id="c1", name="probe", arguments={"value": "a"})],  # реальный вызов
+            array,  # массив вызовов текстом — придерживаем, не показываем
+            "Нашёл две заметки по теме.",  # после нуджа — человеческий ответ
+        ]
+    )
+    text = await collect(make_orchestrator(llm, db, tools=[probe_spec(executed)]))
+    assert executed == ["a"]  # массив НЕ исполнен, только реальный вызов
+    assert "search_documents" not in text  # сырой служебный формат не показан
+    assert "Рейтингование" not in text
+    assert "Нашёл две заметки" in text
+
+
+async def test_persistent_json_text_refused(db: Database) -> None:
+    executed: list[str] = []
+    array = (
+        '[{"name": "search_documents", "arguments": {"query": "A"}}, '
+        '{"name": "search_documents", "arguments": {"query": "B"}}]'
+    )
+    llm = FakeLLM(
+        replies=[
+            [ToolCall(id="c1", name="probe", arguments={"value": "a"})],
+            array,  # держим, один нудж
+            array,  # снова служебный формат → честный отказ
+        ]
+    )
+    text = await collect(make_orchestrator(llm, db, tools=[probe_spec(executed)]))
+    assert "служебным форматом" in text  # JSON_TEXT_REFUSAL
+    assert "search_documents" not in text
+
+
+async def test_single_json_text_not_shown_raw(db: Database) -> None:
+    # одиночный вызов JSON-текстом по-прежнему спасается, но сырой JSON не виден
+    executed: list[str] = []
+    llm = FakeLLM(
+        replies=['{"tool": "probe", "arguments": {"value": "z"}}', "готово"]
+    )
+    text = await collect(make_orchestrator(llm, db, tools=[probe_spec(executed)]))
+    assert executed == ["z"]
+    assert '"tool"' not in text  # сырой JSON-ключ не показан
+    assert "готово" in text
+
+
+async def test_reply_starting_with_digit_streams(db: Database) -> None:
+    # обычная проза (не с { или [) стримится как прежде — потоковость сохранена
+    llm = FakeLLM(replies=["1) первый пункт, 2) второй"])
+    assert await collect(make_orchestrator(llm, db)) == "1) первый пункт, 2) второй"
+
+
 async def test_duplicate_tool_call_not_reexecuted(db: Database) -> None:
     executed: list[str] = []
     same = [ToolCall(id="c", name="probe", arguments={"value": "x"})]

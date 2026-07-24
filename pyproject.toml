@@ -19,6 +19,7 @@ dependencies = [
     "qdrant-client>=1.9",  # векторное хранилище, embedded-режим (ADR-3)
     "pypdf>=4.2",  # извлечение текста из PDF (чистый Python; OCR — Sprint 8)
     "python-docx>=1.1",  # извлечение текста из DOCX
+    "openpyxl>=3.1",  # извлечение значений из XLSX/XLSM (чистый Python, потоковое чтение)
     "python-dateutil>=2.9",  # RRULE: валидация и вычисление следующего срабатывания
     "anthropic>=0.40",  # облачный провайдер Claude (роль chat под аккаунтом владельца)
     "fastapi>=0.111",   # локальный web-чат (Sprint 9)
@@ -69,6 +70,12 @@ disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
 module = "send2trash.*"
+ignore_missing_imports = true
+
+# openpyxl не поставляет типовых аннотаций (py.typed) — трактуем как
+# нетипизированный модуль (как send2trash выше)
+[[tool.mypy.overrides]]
+module = "openpyxl.*"
 ignore_missing_imports = true
 
 # SDK Anthropic: события стрима — сложные union-типы; в strict-режиме доступ к их

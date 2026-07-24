@@ -83,10 +83,19 @@ class IndexerService:
                 # скрытые каталоги (.obsidian, .git) не индексируем
                 if any(part.startswith(".") for part in path.relative_to(root).parts[:-1]):
                     continue
-                if not path.is_file() or path.suffix.lower() not in self._extensions:
+                # временные lock-файлы Office (Excel/Word): «~$Книга.xlsx» —
+                # заблокированы открытым приложением и не несут содержимого
+                if path.name.startswith("~$"):
                     continue
-                if path.stat().st_size > max_bytes:
-                    log.warning("rag_file_too_large", path=str(path))
+                try:
+                    if not path.is_file() or path.suffix.lower() not in self._extensions:
+                        continue
+                    if path.stat().st_size > max_bytes:
+                        log.warning("rag_file_too_large", path=str(path))
+                        continue
+                except OSError as exc:
+                    # заблокированный/недоступный файл не должен рушить скан
+                    log.warning("rag_file_unreadable", path=str(path), error=str(exc))
                     continue
                 found.append(path)
         return found
@@ -97,16 +106,22 @@ class IndexerService:
         seen = {str(p) for p in on_disk}
         enqueued = 0
         for path in on_disk:
-            stat = path.stat()
-            record = await self._catalog.get(str(path))
-            unchanged = (
-                record is not None
-                and record.mtime == stat.st_mtime
-                and record.size == stat.st_size
-            )
-            if unchanged and record is not None and record.status != "pending":
+            try:
+                stat = path.stat()
+                record = await self._catalog.get(str(path))
+                unchanged = (
+                    record is not None
+                    and record.mtime == stat.st_mtime
+                    and record.size == stat.st_size
+                )
+                if unchanged and record is not None and record.status != "pending":
+                    continue
+                content_hash = await asyncio.to_thread(_file_hash, path)
+            except OSError as exc:
+                # файл заблокирован (открыт в Excel) или недоступен: пропускаем
+                # этот заход, вернёмся к нему в следующем скане — весь скан не рушим
+                log.warning("rag_file_scan_skipped", path=str(path), error=str(exc))
                 continue
-            content_hash = await asyncio.to_thread(_file_hash, path)
             if record is not None and record.content_hash == content_hash:
                 if record.status == "pending":
                     # прошлый заход не дошёл до индексации — вернём в очередь

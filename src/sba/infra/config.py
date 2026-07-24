@@ -119,7 +119,7 @@ class ChannelsConfig(_Strict):
 class RagConfig(_Strict):
     enabled: bool = True
     sources: list[Path] = []            # папки с документами (задаются в local.yaml)
-    include_extensions: list[str] = [".pdf", ".docx", ".md", ".txt"]
+    include_extensions: list[str] = [".pdf", ".docx", ".md", ".txt", ".xlsx", ".xlsm"]
     max_file_mb: int = 50
     scan_interval_minutes: float = 2.0
     dialog_cooldown_seconds: float = 90.0  # пауза индексации после сообщения в диалоге
