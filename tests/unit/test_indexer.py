@@ -61,6 +61,25 @@ async def test_new_file_scanned_and_indexed(db: Database, tmp_path: Path) -> Non
     assert await catalog.queue_size() == 0
 
 
+async def test_heartbeat_fires_per_file_not_once_per_cycle(
+    db: Database, tmp_path: Path
+) -> None:
+    """Health-сигнал идёт по ходу обработки (скан + каждый файл), а не раз за
+    цикл: разбор большого корпуса не должен выглядеть зависанием (живая
+    проверка 2026-07-24 — ложная тревога «индексатор завис 21 мин»)."""
+    source = tmp_path / "docs"
+    source.mkdir()
+    for i in range(3):
+        (source / f"n{i}.md").write_text(f"Заметка номер {i} про Ладогу.", "utf-8")
+    indexer, _ = make_indexer(db, source, FakeIndex())
+    beats = {"n": 0}
+    indexer._heartbeat = lambda: beats.__setitem__("n", beats["n"] + 1)
+
+    await indexer.scan_once()        # бьёт на каждый файл при хэшировании
+    await indexer.process_queue()    # и на каждый файл при индексации
+    assert beats["n"] >= 6           # 3 файла × (скан + обработка) — заведомо больше 1
+
+
 async def test_unchanged_file_not_reindexed(db: Database, tmp_path: Path) -> None:
     source = tmp_path / "docs"
     source.mkdir()
