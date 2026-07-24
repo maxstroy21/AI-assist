@@ -55,6 +55,7 @@ class IndexerService:
         self._extensions = {ext.lower() for ext in config.include_extensions}
         self._last_activity = 0.0
         self._last_scan_at: float | None = None
+        self._heartbeat: Callable[[], None] | None = None
 
     # ── связь с диалогом ─────────────────────────────────────────────────────
 
@@ -62,8 +63,16 @@ class IndexerService:
         """Вызывается на каждое входящее сообщение (подписка на шину в app.py)."""
         self._last_activity = time.monotonic()
 
+    def _beat(self) -> None:
+        """Сигнал жизни health-монитору. Бьём по ходу обработки (каждый файл,
+        каждый тик ожидания), а не раз за цикл: разбор большого корпуса и
+        намеренная пауза под диалог — это работа, а не зависание."""
+        if self._heartbeat is not None:
+            self._heartbeat()
+
     async def _wait_quiet(self) -> None:
         while True:
+            self._beat()  # ждём паузы в диалоге — это не простой, монитор жив
             since = time.monotonic() - self._last_activity
             remaining = self._config.dialog_cooldown_seconds - since
             if remaining <= 0:
@@ -107,6 +116,7 @@ class IndexerService:
         seen = {str(p) for p in on_disk}
         enqueued = 0
         for path in on_disk:
+            self._beat()  # хэширование большого корпуса — работа, не зависание
             try:
                 stat = path.stat()
                 record = await self._catalog.get(str(path))
@@ -159,6 +169,7 @@ class IndexerService:
         while batch := await self._catalog.queue_batch(QUEUE_BATCH):
             progressed = False
             for item in batch:
+                self._beat()  # каждый файл — сигнал жизни: длинный разбор ≠ зависание
                 if respect_cooldown:
                     await self._wait_quiet()
                 try:
@@ -206,10 +217,10 @@ class IndexerService:
     # ── фоновый цикл ─────────────────────────────────────────────────────────
 
     async def run_forever(self, heartbeat: Callable[[], None] | None = None) -> None:
+        self._heartbeat = heartbeat  # scan/process бьют по ходу через self._beat()
         interval = self._config.scan_interval_minutes * 60
         while True:
-            if heartbeat is not None:  # сигнал жизни health-монитору (Sprint 10)
-                heartbeat()
+            self._beat()  # сигнал жизни health-монитору (Sprint 10)
             try:
                 await self.scan_once()
                 await self.process_queue()
