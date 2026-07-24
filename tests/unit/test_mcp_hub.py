@@ -163,6 +163,26 @@ async def test_unavailable_server_skipped(registry):
     await hub.stop()
 
 
+async def test_stop_swallows_base_exception_group_from_worker(registry):
+    """Ctrl+C во время подключения: anyio-контексты MCP бросают
+    BaseExceptionGroup(KeyboardInterrupt) — stop() гасит его, а не роняет
+    завершение пугающим трейсбеком (живая проверка 2026-07-24)."""
+    hub = MCPClientHub([entry()])
+    state = hub._servers["fetch"]
+
+    async def dying_worker() -> None:
+        try:
+            await asyncio.Event().wait()  # висим, пока не отменят
+        except asyncio.CancelledError:
+            # эмулируем свёртку anyio: BaseException, не Exception
+            raise BaseExceptionGroup("teardown", [KeyboardInterrupt()]) from None
+
+    state.task = asyncio.create_task(dying_worker())
+    await asyncio.sleep(0)  # дать воркеру дойти до await
+    await hub.stop()  # не должно ничего пробросить
+    assert state.task is None
+
+
 async def test_name_conflict_gets_prefix(registry):
     from pydantic import BaseModel
 

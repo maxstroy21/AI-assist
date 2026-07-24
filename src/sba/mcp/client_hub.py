@@ -229,8 +229,22 @@ class MCPClientHub:
                 state.task.cancel()
                 try:
                     await state.task
-                except (asyncio.CancelledError, Exception):
-                    pass
+                except (
+                    Exception,
+                    asyncio.CancelledError,
+                    KeyboardInterrupt,
+                    BaseExceptionGroup,
+                ) as exc:
+                    # На Ctrl+C worker сворачивает anyio-контексты MCP-транспорта,
+                    # и те могут бросить KeyboardInterrupt или BaseExceptionGroup
+                    # (это BaseException, не Exception — прежний catch их пропускал,
+                    # и завершение вываливало пугающий трейсбек). Мы и так
+                    # останавливаемся: тихо гасим (живая проверка 2026-07-24).
+                    log.debug(
+                        "mcp_worker_stop_swallowed",
+                        server=state.entry.name,
+                        error=type(exc).__name__,
+                    )
                 state.task = None
 
 
