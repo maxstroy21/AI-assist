@@ -27,7 +27,8 @@ from sba.modules.files.ops import FileOpsService
 from sba.modules.files.safety import NO_ROOTS_HINT, RootGuard
 
 SCAN_LIMIT = 50_000  # предохранитель от обхода гигантских деревьев
-FIND_MAX_MATCHES = 30
+FIND_SHOWN = 30       # сколько путей кладём в ответ (потолок на объём → экономия токенов облака)
+FIND_COUNT_CAP = 200  # докуда считаем всего совпадений; дальше — «более N» (не гоним обход зря)
 SEARCH_TIME_BUDGET = 20.0  # секунд: OneDrive/сетевые папки перечисляются медленно
 
 
@@ -94,31 +95,38 @@ class FilesToolset:
             lines.append(f"…и ещё {len(entries) - limit}")
         return "\n".join(lines)
 
-    def _search(self, pattern: str, limit: int) -> tuple[list[Path], bool]:
+    def _search(self, pattern: str, keep: int, count_cap: int) -> tuple[list[Path], int, bool]:
         """Рекурсивный поиск по имени во всех разрешённых корнях (в отдельном потоке).
 
-        Возвращает (совпадения, полный_ли_обход): бюджет времени и лимит
-        просмотренных файлов защищают от бесконечного перечисления
-        OneDrive/сетевых папок.
+        Возвращает (первые `keep` совпадений, всего_найдено, полный_ли_обход).
+        Считаем совпадения до `count_cap`, но в список кладём лишь первые `keep`
+        — тогда можно честно сказать «найдено X, показано Y», не раздувая ответ.
+        Бюджет времени и лимит просмотренных файлов защищают от бесконечного
+        перечисления OneDrive/сетевых папок; при их срабатывании полный_ли_обход
+        = False (истинное «всего» неизвестно — покажем «максимум возможного»).
         """
         matches: list[Path] = []
+        total = 0
         scanned = 0
         deadline = time.monotonic() + SEARCH_TIME_BUDGET
         pattern_lower = pattern.lower()
         for root in self._roots:
             for dirpath, dirnames, filenames in os.walk(root):
                 if time.monotonic() > deadline:
-                    return matches, False
+                    return matches, total, False
                 dirnames[:] = [d for d in dirnames if not d.startswith(".")]
                 for filename in filenames:
                     scanned += 1
                     if scanned > SCAN_LIMIT:
-                        return matches, False
+                        return matches, total, False
                     if fnmatch.fnmatch(filename.lower(), pattern_lower):
-                        matches.append(Path(dirpath) / filename)
-                        if len(matches) >= limit:
-                            return matches, True
-        return matches, True
+                        total += 1
+                        if len(matches) < keep:
+                            matches.append(Path(dirpath) / filename)
+                        if total >= count_cap:
+                            # совпадений очень много — дальше считать незачем
+                            return matches, total, True
+        return matches, total, True
 
     @staticmethod
     def _normalize_pattern(pattern: str) -> str:
@@ -131,12 +139,14 @@ class FilesToolset:
         if not self._roots:
             return NO_ROOTS_HINT
         pattern = self._normalize_pattern(args.name_pattern.strip().strip("'\""))
-        matches, complete = await asyncio.to_thread(self._search, pattern, FIND_MAX_MATCHES)
+        matches, total, complete = await asyncio.to_thread(
+            self._search, pattern, FIND_SHOWN, FIND_COUNT_CAP
+        )
         if not matches and complete and "*" not in pattern and "?" not in pattern:
             # точное имя не нашлось — ищем «содержит» (например, «debug» → *debug*)
             pattern = f"*{pattern}*"
-            matches, complete = await asyncio.to_thread(
-                self._search, pattern, FIND_MAX_MATCHES
+            matches, total, complete = await asyncio.to_thread(
+                self._search, pattern, FIND_SHOWN, FIND_COUNT_CAP
             )
         if not matches:
             note = "" if complete else " (обход прерван по лимиту времени — папки очень большие)"
@@ -144,12 +154,32 @@ class FilesToolset:
                 f"Ничего не найдено по маске {pattern!r} в разрешённых папках "
                 f"({self._roots_summary()}){note}"
             )
-        lines = [f"Найдено {len(matches)}:"] + [str(m) for m in matches]
+        shown = len(matches)
+        header = self._find_header(shown, total, complete)
+        return header + "\n" + "\n".join(str(m) for m in matches)
+
+    @staticmethod
+    def _find_header(shown: int, total: int, complete: bool) -> str:
+        """Честная строка о полноте выдачи (просьба владельца: «найдено X,
+        показано Y», а если полный обход невозможен — «максимум возможного»)."""
         if not complete:
-            lines.append("…(обход прерван по лимиту времени, результат может быть неполным)")
-        elif len(matches) >= FIND_MAX_MATCHES:
-            lines.append("…(показаны первые совпадения, уточните маску)")
-        return "\n".join(lines)
+            # истинное «всего» неизвестно — обход прервался по лимиту времени/размера
+            return (
+                f"Показаны {shown} файлов — это максимум, который удалось собрать: "
+                "папки очень большие и обход прерван по лимиту. "
+                "Уточните маску, чтобы сузить поиск."
+            )
+        if total >= FIND_COUNT_CAP:
+            return (
+                f"Найдено более {FIND_COUNT_CAP} файлов, показаны первые {shown}. "
+                "Уточните маску, чтобы сузить поиск."
+            )
+        if total > shown:
+            return (
+                f"Найдено {total}, показаны первые {shown} (ещё {total - shown}). "
+                "Уточните маску, чтобы увидеть остальные."
+            )
+        return f"Найдено {total}:"
 
     async def read_document(self, args: PathArgs) -> str:
         raw = args.path.strip().strip("'\"")
@@ -157,7 +187,7 @@ class FilesToolset:
         if not target.exists():
             # голое имя без пути — попробуем найти файл сами
             if "/" not in raw and "\\" not in raw:
-                matches, _complete = await asyncio.to_thread(self._search, raw, 5)
+                matches, _total, _complete = await asyncio.to_thread(self._search, raw, 5, 5)
                 if len(matches) == 1:
                     target = matches[0]
                 elif matches:

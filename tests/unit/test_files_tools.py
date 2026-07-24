@@ -119,6 +119,44 @@ async def test_find_files_nothing(tmp_path: Path) -> None:
     assert "Ничего не найдено" in result
 
 
+async def test_find_files_caps_output_and_reports_remainder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # показываем не всё, но честно говорим, сколько найдено и сколько осталось
+    monkeypatch.setattr(files_tools, "FIND_SHOWN", 3)
+    monkeypatch.setattr(files_tools, "FIND_COUNT_CAP", 200)
+    for i in range(10):
+        (tmp_path / f"file{i}.log").write_text("x", encoding="utf-8")
+    result = await make_toolset(tmp_path).find_files(FindArgs(name_pattern="*.log"))
+    assert "Найдено 10, показаны первые 3 (ещё 7)" in result
+    assert result.count(".log") == 3  # в ответе ровно 3 пути, а не 10
+
+
+async def test_find_files_reports_more_than_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # совпадений больше потолка счёта — говорим «более N», обход не гоним весь
+    monkeypatch.setattr(files_tools, "FIND_SHOWN", 3)
+    monkeypatch.setattr(files_tools, "FIND_COUNT_CAP", 5)
+    for i in range(20):
+        (tmp_path / f"file{i}.log").write_text("x", encoding="utf-8")
+    result = await make_toolset(tmp_path).find_files(FindArgs(name_pattern="*.log"))
+    assert "более 5" in result
+    assert "показаны первые 3" in result
+
+
+async def test_find_files_incomplete_walk_says_max_possible(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # обход прерван по лимиту — истинное «всего» неизвестно, честно об этом говорим
+    monkeypatch.setattr(files_tools, "FIND_SHOWN", 3)
+    monkeypatch.setattr(files_tools, "SCAN_LIMIT", 2)  # обход упрётся в лимит просмотра
+    for i in range(10):
+        (tmp_path / f"file{i}.log").write_text("x", encoding="utf-8")
+    result = await make_toolset(tmp_path).find_files(FindArgs(name_pattern="*.log"))
+    assert "максимум, который удалось собрать" in result
+
+
 async def test_read_bare_name_auto_found_in_subfolder(tmp_path: Path) -> None:
     nested = tmp_path / "глубоко" / "внутри"
     nested.mkdir(parents=True)
