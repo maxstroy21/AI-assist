@@ -222,6 +222,12 @@ class Database:
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA journal_mode=WAL")
         await conn.execute("PRAGMA foreign_keys=ON")
+        # базу делят два процесса (бот + MCP-сервер, Sprint 9) плюс фоновые
+        # работы внутри бота (индексатор, консолидатор, шедулер). По умолчанию
+        # SQLite при занятой базе бросает "database is locked" сразу — просим
+        # подождать освобождения до 5 с (WAL разводит читателей и писателя,
+        # так что ожидание короткое и конфликт почти не виден)
+        await conn.execute("PRAGMA busy_timeout=5000")
         db = cls(conn)
         await db._migrate()
         return db
