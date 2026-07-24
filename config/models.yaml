@@ -36,15 +36,19 @@ runtimes:
   #   api_key: "${DEEPSEEK_API_KEY}"
 
 roles:
-  # Роль chat — облачный Groq (2026-07-24): llama-3.3-70b-versatile сильно
-  # умнее локальной 3B (меньше фабрикаций, стабильный русский, живой tool
-  # calling), ответы — секунды вместо минут. temperature 0.3 — как и раньше.
-  chat:       { runtime: groq, model: "llama-3.3-70b-versatile", temperature: 0.3 }
-  # Вернуться на локальную модель (Groq недоступен/кончился лимит): закомментируйте
-  # строку выше и раскомментируйте эту:
+  # Роль chat — облачный Groq (2026-07-24): qwen3.6-27b. Выбран за дневной
+  # запас 200K токенов (вдвое против llama-3.3-70b, у неё всего 100K/день) и
+  # сильный русский — то же семейство Qwen, что локальная qwen2.5. temperature
+  # 0.3 — как и раньше. Минутный лимит 8K токенов (429 самолечится автоповтором).
+  chat:       { runtime: groq, model: "qwen/qwen3.6-27b", temperature: 0.3 }
+  # Альтернатива с бо́льшим минутным лимитом (12K/мин, реже 429), но дневной
+  # запас всего 100K — при активном использовании упирается в дневной потолок:
+  # chat:     { runtime: groq, model: "llama-3.3-70b-versatile", temperature: 0.3 }
+  # Другой крупный вариант (200K/день): openai/gpt-oss-120b.
+  # Вернуться на локальную модель (нет интернета): закомментируйте строку chat
+  # выше и раскомментируйте эту:
   # chat:     { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }
-  # Другие облачные варианты (раскомментируйте нужный рантайм выше и
-  # оставьте ОДНУ строку chat):
+  # Ещё облачные варианты (раскомментируйте нужный рантайм выше, оставьте ОДНУ chat):
   # chat:     { runtime: anthropic, model: "claude-sonnet-5", max_tokens: 4096 }
   # chat:     { runtime: deepseek,  model: "deepseek-chat", temperature: 0.3 }
   extraction: { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.0 }
