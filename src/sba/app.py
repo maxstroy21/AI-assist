@@ -33,6 +33,7 @@ from sba.infra.vectors import VectorStore
 from sba.llm.config import load_models_config
 from sba.llm.service import ModelGateway
 from sba.mcp.client_hub import MCPClientHub
+from sba.modules.backup.service import BackupService
 from sba.modules.basic.tools import build_tools as build_basic_tools
 from sba.modules.files.ops import FileOpsService
 from sba.modules.files.opsstore import FileOpsStore
@@ -91,6 +92,7 @@ class App:
         self.scheduler: SchedulerService | None = None
         self.reminders: ReminderService | None = None
         self.brief: MorningBrief | None = None
+        self.backup: BackupService | None = None
         self.consolidator: MemoryConsolidator | None = None
         self.mcp_hub: MCPClientHub | None = None
         self.channels: list[ChannelAdapter] = []
@@ -207,8 +209,9 @@ class App:
                 for spec in build_task_tools(tasks):
                     registry.register(spec)
 
-            if reminders_cfg.enabled:
-                assert parser is not None
+            # Scheduler общий: напоминания/сводка (Sprint 6) и бэкап (Sprint 10)
+            backup_cfg = config.modules.backup
+            if reminders_cfg.enabled or backup_cfg.enabled:
                 app.scheduler = SchedulerService(
                     SchedulerStore(app.db),
                     app.bus,
@@ -216,6 +219,10 @@ class App:
                     tick_seconds=config.modules.scheduler.tick_seconds,
                     misfire_grace_minutes=config.modules.scheduler.misfire_grace_minutes,
                 )
+
+            if reminders_cfg.enabled:
+                assert parser is not None
+                assert app.scheduler is not None
                 # доставка через Router (создаётся ниже) — позднее связывание
                 async def deliver_notification(out: OutgoingMessage) -> None:
                     assert app.router is not None
@@ -251,6 +258,23 @@ class App:
                         tasks=tasks,
                     )
                     app.bus.subscribe(JobFired, app.brief.on_job_fired)
+
+            # Бэкап с restore-тестом (Sprint 10): ежедневный джоб + /backup
+            if backup_cfg.enabled:
+                assert app.scheduler is not None
+                app.backup = BackupService(
+                    app.db,
+                    app.scheduler,
+                    tz,
+                    data_dir=config.app.data_dir,
+                    config_dir=config_dir,
+                    at=parse_brief_time(backup_cfg.time),
+                    keep_last=backup_cfg.keep_last,
+                    timeout_seconds=backup_cfg.timeout_seconds,
+                    backups_dir=backup_cfg.dir,
+                )
+                backup = app.backup
+                app.bus.subscribe(JobFired, backup.on_job_fired)
 
             memory: MemoryService | None = None
             memory_cfg = config.modules.memory
@@ -419,6 +443,9 @@ class App:
         if fileops is not None:
             # ревизия сухого прогона (риск Sprint 8): режим и журнал операций
             commands["/fileops"] = ("журнал файловых операций", fileops.overview_text)
+        if self.backup is not None:
+            # бэкап по требованию + список копий (Sprint 10)
+            commands["/backup"] = ("сделать бэкап и показать копии", self.backup.overview_text)
         if self.indexer is not None and rag_service is not None:
             indexer, rag = self.indexer, rag_service
 
@@ -484,6 +511,8 @@ class App:
             # потом цикл — иначе перерегистрация может затереть созревший джоб
             if self.brief is not None:
                 await self.brief.schedule()
+            if self.backup is not None:
+                await self.backup.schedule()
             if self.reminders is not None:
                 synced = await self.reminders.sync_open_tasks()
                 if synced:
