@@ -595,8 +595,20 @@ class App:
             )
         if self.health is not None:
             background.append(asyncio.create_task(self.health.run_forever()))
+        # Ждём ПЕРВЫЙ завершившийся канал, а не все: выход из консоли (/quit,
+        # EOF, Ctrl+C — чтение stdin гасит консольный канал) должен останавливать
+        # и Telegram, иначе бот с несколькими каналами не завершается по Ctrl+C
+        # (aiogram знай себе опрашивает). Живая проверка 2026-07-24.
+        channel_tasks = [asyncio.create_task(ch.start()) for ch in self.channels]
         try:
-            await asyncio.gather(*(ch.start() for ch in self.channels))
+            done, pending = await asyncio.wait(
+                channel_tasks, return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+            for task in done:
+                if not task.cancelled() and task.exception() is not None:
+                    log.error("channel_stopped_with_error", error=str(task.exception()))
         finally:
             for task in background:
                 task.cancel()
