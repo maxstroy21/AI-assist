@@ -272,13 +272,11 @@ class OpenAICompatProvider:
                 raise LLMError(
                     f"инструмент {slot['name']}: аргументы не являются JSON: {raw_args[:200]}"
                 ) from exc
-            if not isinstance(arguments, dict):
-                raise LLMError(f"инструмент {slot['name']}: аргументы не объект")
             calls.append(
                 ToolCall(
                     id=slot["id"] or f"call_{index}",
                     name=slot["name"],
-                    arguments=arguments,
+                    arguments=_normalize_tool_args(arguments, slot["name"]),
                 )
             )
         return calls
@@ -317,3 +315,23 @@ class OpenAICompatProvider:
             delay = min(base, MAX_RETRY_DELAY)
             log.warning("llm_retry", attempt=attempt + 1, delay=delay, reason=reason)
             await asyncio.sleep(delay)
+
+
+def _normalize_tool_args(arguments: object, tool_name: str) -> dict[str, Any]:
+    """Аргументы вызова инструмента → словарь. Облачные модели (Groq
+    llama-3.3) для инструмента без параметров часто шлют `null`, пустую
+    строку или даже JSON-строку с объектом внутри (двойное кодирование).
+    Не роняем из-за этого весь ход — трактуем как «без аргументов».
+    """
+    if isinstance(arguments, str):
+        try:  # двойное кодирование: строка, внутри которой сам объект
+            arguments = json.loads(arguments)
+        except json.JSONDecodeError:
+            pass
+    if isinstance(arguments, dict):
+        return arguments
+    if arguments not in (None, ""):
+        # число/список у инструмента без аргументов — редкость, но не повод
+        # рушить ответ владельцу; логируем и продолжаем как «без аргументов»
+        log.warning("llm_tool_args_not_object", tool=tool_name, value=str(arguments)[:200])
+    return {}

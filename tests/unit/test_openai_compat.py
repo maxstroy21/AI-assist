@@ -167,6 +167,44 @@ async def test_stream_retries_on_429(monkeypatch: pytest.MonkeyPatch) -> None:
     assert calls["n"] == 2
 
 
+def _tool_call_stream(name: str, arguments: str) -> bytes:
+    chunk = {
+        "choices": [
+            {
+                "delta": {
+                    "tool_calls": [
+                        {"index": 0, "id": "c1", "function": {"name": name, "arguments": arguments}}
+                    ]
+                }
+            }
+        ]
+    }
+    return f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode()
+
+
+async def test_tool_call_null_arguments_becomes_empty_dict() -> None:
+    # Groq llama-3.3 на инструменте без параметров шлёт arguments="null" —
+    # это не должно ронять весь ход (баг живой проверки 2026-07-24)
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_tool_call_stream("get_current_time", "null"))
+
+    events = [e async for e in make_provider(handler).stream("m", MSGS, tools=[{}])]
+    call = events[-1].tool_calls[0]
+    assert call.name == "get_current_time"
+    assert call.arguments == {}
+
+
+async def test_tool_call_double_encoded_arguments_recovered() -> None:
+    # аргументы как JSON-строка с объектом внутри — разворачиваем
+    double_encoded = '"{\\"name_pattern\\": \\"a\\"}"'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_tool_call_stream("find_files", double_encoded))
+
+    events = [e async for e in make_provider(handler).stream("m", MSGS, tools=[{}])]
+    assert events[-1].tool_calls[0].arguments == {"name_pattern": "a"}
+
+
 async def test_4xx_fails_without_retry() -> None:
     calls = {"n": 0}
 
