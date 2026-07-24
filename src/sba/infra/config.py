@@ -13,7 +13,7 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 ENV_PREFIX = "SBA__"
 
@@ -69,6 +69,30 @@ class TelegramChannelConfig(_Strict):
     allowed_user_ids: list[int] = []
 
 
+class WebChannelConfig(_Strict):
+    """Локальный web-чат (Sprint 9): FastAPI + WebSocket на машине владельца."""
+
+    enabled: bool = False
+    host: str = "127.0.0.1"   # менять только осознанно (напр. Tailscale-интерфейс):
+                              # аутентификации в web-чате нет, защита — локальность
+    port: int = 8765
+    history_messages: int = 30  # сколько последних сообщений показать при открытии
+
+    @field_validator("port")
+    @classmethod
+    def _valid_port(cls, v: int) -> int:
+        if not 1 <= v <= 65535:
+            raise ValueError("port должен быть в диапазоне 1–65535")
+        return v
+
+    @field_validator("history_messages")
+    @classmethod
+    def _positive(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError("history_messages должен быть > 0")
+        return v
+
+
 class AgentConfig(_Strict):
     processor: Literal["llm", "echo"] = "llm"
     history_max_messages: int = 16
@@ -89,6 +113,7 @@ class FilesConfig(_Strict):
 class ChannelsConfig(_Strict):
     cli: ChannelToggle = ChannelToggle(enabled=True)
     telegram: TelegramChannelConfig = TelegramChannelConfig()
+    web: WebChannelConfig = WebChannelConfig()
 
 
 class RagConfig(_Strict):
@@ -228,6 +253,59 @@ class FileOpsConfig(_Strict):
         return v.strip()
 
 
+class McpServerEntry(_Strict):
+    """Внешний MCP-сервер (Sprint 9): его инструменты попадают в общий Tool
+    Registry и подчиняются тем же уровням риска (ADR-7, ADR-10)."""
+
+    name: str                          # короткое имя: git, fetch, calendar…
+    enabled: bool = True
+    # транспорт: либо локальный процесс (stdio), либо URL (streamable HTTP)
+    command: str = ""                  # напр. 'uvx' или 'npx'
+    args: list[str] = []               # напр. ['mcp-server-git']
+    env: dict[str, str] = {}           # переменные окружения процесса
+    url: str = ""                      # напр. 'http://localhost:8080/mcp'
+    # риск инструментов сервера; по умолчанию консервативно destructive —
+    # каждый вызов чужого кода требует подтверждения, пока владелец явно
+    # не понизил риск в конфиге (docs/04 §15)
+    risk: Literal["read", "write", "destructive"] = "destructive"
+    tool_risks: dict[str, Literal["read", "write", "destructive"]] = {}
+    connect_timeout_seconds: float = 20.0
+
+    @field_validator("name")
+    @classmethod
+    def _plain_name(cls, v: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", v):
+            raise ValueError(
+                f"имя MCP-сервера должно быть из букв/цифр/дефисов, получено {v!r}"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def _one_transport(self) -> McpServerEntry:
+        if bool(self.command) == bool(self.url):
+            raise ValueError(
+                f"MCP-сервер {self.name!r}: укажите ровно одно из command (stdio) "
+                "или url (HTTP)"
+            )
+        return self
+
+
+class McpConfig(_Strict):
+    # подключаемые внешние серверы; пустой список = MCP-клиент выключен
+    servers: list[McpServerEntry] = []
+    # наш MCP-сервер (python -m sba.mcp.server): какие МОДУЛИ экспортировать.
+    # Именно список модулей, а не имён инструментов: новый инструмент
+    # существующего модуля утекает наружу сам собой (docs/06 §Sprint 9)
+    export_modules: list[str] = ["rag", "memory", "tasks"]
+
+    @model_validator(mode="after")
+    def _unique_names(self) -> McpConfig:
+        names = [s.name for s in self.servers]
+        if len(names) != len(set(names)):
+            raise ValueError("имена MCP-серверов должны быть уникальны")
+        return self
+
+
 class ModulesConfig(_Strict):
     memory: MemoryConfig = MemoryConfig()
     rag: RagConfig = RagConfig()
@@ -251,6 +329,7 @@ class Config(_Strict):
     files: FilesConfig = FilesConfig()
     modules: ModulesConfig = ModulesConfig()
     channels: ChannelsConfig = ChannelsConfig()
+    mcp: McpConfig = McpConfig()
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:

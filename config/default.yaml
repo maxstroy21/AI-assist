@@ -97,3 +97,32 @@ channels:
     enabled: false           # включить в local.yaml, там же token и allowed_user_ids
     token: ""                # токен от @BotFather — ТОЛЬКО в local.yaml, не в git
     allowed_user_ids: []     # ваш числовой Telegram id; чужие сообщения игнорируются
+  web:
+    enabled: false           # локальный web-чат: включить в local.yaml, открыть
+                             # в браузере http://127.0.0.1:8765
+    host: 127.0.0.1          # менять только осознанно: аутентификации нет,
+                             # защита — доступ только с этой машины
+    port: 8765
+    history_messages: 30     # сколько последних сообщений показать при открытии
+
+mcp:
+  # Внешние MCP-серверы: их инструменты появляются у ассистента наравне со
+  # встроенными и подчиняются тем же уровням риска. Риск по умолчанию —
+  # destructive (каждый вызов требует подтверждения), понижайте осознанно.
+  # Пример в local.yaml:
+  #   mcp:
+  #     servers:
+  #       - name: git
+  #         command: uvx            # нужен установленный uv (или npx для js-серверов)
+  #         args: [mcp-server-git]
+  #         risk: read              # у git-сервера только чтение истории
+  #       - name: fetch
+  #         command: uvx
+  #         args: [mcp-server-fetch]
+  #         risk: read              # это и есть web-доступ: скачать страницу по URL
+  servers: []
+  # Наш MCP-сервер (python -m sba.mcp.server, для Claude Desktop и др.):
+  # какие МОДУЛИ экспортировать. Новый инструмент существующего модуля
+  # экспортируется автоматически; destructive-инструменты не экспортируются
+  # никогда (внешний клиент не умеет наших подтверждений)
+  export_modules: [rag, memory, tasks]

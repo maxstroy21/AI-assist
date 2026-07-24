@@ -69,6 +69,99 @@
   режиме сухого прогона, undo-журнал, дубликаты и старые версии — идёт неделя
   проверки планов; шаг 2 готов: экстрактор XLSX и Obsidian-обогащение
   тегов/wikilinks; OCR — следующий шаг)
+- [x] Sprint 9 — Web-чат + MCP: локальный чат в браузере (streaming, кнопки,
+  общие с Telegram напоминания), подключение внешних MCP-серверов конфигом,
+  наш MCP-сервер для Claude Desktop — **полностью принят владельцем 2026-07-24**
+  (web-чат, внешний MCP-сервер `fetch` и наш сервер `second-brain` в Claude
+  Desktop проверены вживую)
+
+## Web-чат (Sprint 9)
+
+Второй канал: чат в браузере на этой же машине. Работает одновременно
+с Telegram — напоминания приходят в оба канала, у каждого канала своя история.
+Внутри — то же ядро: streaming ответа, маркеры вызова инструментов 🔧, кнопки
+✅/⏰/✖ у напоминаний, команды `/tasks`, `/memory`, `/new` и т.д.
+
+Включение — две строки в `config/local.yaml`:
+
+```yaml
+channels:
+  web:
+    enabled: true
+```
+
+После запуска `python -m sba` в консоли появится строка
+`🌐 Web-чат: http://127.0.0.1:8765` — откройте этот адрес в браузере.
+
+Безопасность: чат слушает только `127.0.0.1` — с других компьютеров он
+недоступен, поэтому пароля нет. Не меняйте `host` на другой адрес, если не
+понимаете последствий (исключение — Tailscale-доступ с телефона, см. backlog).
+
+## MCP (Sprint 9)
+
+[MCP](https://modelcontextprotocol.io) — открытый протокол инструментов для
+AI-ассистентов. Подключён в обе стороны (ADR-7).
+
+### Чужие инструменты — нашему ассистенту
+
+Готовые MCP-серверы (git, скачивание страниц, календари…) подключаются
+конфигом — без единой строки кода. Их инструменты появляются у ассистента
+наравне со встроенными: виден маркер 🔧, вызовы пишутся в `/audit`, действует
+та же модель риска. По умолчанию риск — `destructive` (каждый вызов требует
+подтверждения «да»); если сервер безобиден, понизьте риск осознанно:
+
+```yaml
+mcp:
+  servers:
+    - name: fetch              # скачивание страниц = простой web-доступ
+      command: uvx             # нужен установленный uv (winget install astral-sh.uv)
+      args: [mcp-server-fetch]
+      risk: read
+```
+
+Недоступный сервер не мешает запуску: подключение идёт в фоне, каналы
+отвечают с первой секунды, а в логе появляется `mcp_server_unavailable`
+(и хаб продолжает пытаться подключиться). При падении уже подключённого
+сервера хаб переподключается сам. Чтобы временно отключить конкретный
+сервер, не удаляя его настройку, допишите ему строку `enabled: false`.
+
+### Наш «мозг» — другим ассистентам (Claude Desktop)
+
+Отдельный процесс `python -m sba.mcp.server` отдаёт инструменты ассистента
+(поиск по документам, память, задачи — список: `mcp.export_modules`) любому
+MCP-клиенту. Опасные (destructive) инструменты не экспортируются никогда.
+
+Подключение к Claude Desktop:
+
+1. Откройте PowerShell в папке проекта и выполните целиком:
+
+```powershell
+$repo = (Get-Location).Path
+$cfgDir = "$env:APPDATA\Claude"
+New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+$cfgPath = "$cfgDir\claude_desktop_config.json"
+$cfg = if (Test-Path $cfgPath) { Get-Content $cfgPath -Raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+if (-not $cfg.PSObject.Properties['mcpServers']) { $cfg | Add-Member mcpServers ([pscustomobject]@{}) }
+$server = [pscustomobject]@{ command = "$repo\.venv\Scripts\python.exe"; args = @('-m','sba.mcp.server','--config-dir',"$repo\config") }
+if ($cfg.mcpServers.PSObject.Properties['second-brain']) { $cfg.mcpServers.'second-brain' = $server } else { $cfg.mcpServers | Add-Member 'second-brain' $server }
+$cfg | ConvertTo-Json -Depth 10 | Set-Content $cfgPath -Encoding UTF8
+Write-Host "Готово: $cfgPath"
+```
+
+2. Полностью перезапустите Claude Desktop (значок в трее → Quit).
+
+3. В новом чате Claude Desktop нажмите иконку инструментов — в списке должен
+   появиться сервер `second-brain` с инструментами `search_documents`,
+   `recall_memory`, `create_task` и другими. Спросите: «что лежит у меня
+   в памяти про кофе?» — Claude вызовет `recall_memory`.
+
+Особенности:
+
+- SQLite общий с основным ассистентом: задача, созданная из Claude Desktop,
+  видна в `/tasks` в Telegram (и наоборот).
+- Если основное приложение запущено, векторный индекс занят им — поиск по
+  документам из Claude Desktop работает по словам (FTS), это штатно.
+- Все вызовы пишутся в тот же журнал `/audit`.
 
 ## Файловые операции (Sprint 8, режим проверки)
 

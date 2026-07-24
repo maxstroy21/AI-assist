@@ -191,6 +191,7 @@ class AgentOrchestrator:
         timezone: str,
         memory: MemoryPort | None = None,
         extra_commands: dict[str, tuple[str, Callable[[], Awaitable[str]]]] | None = None,
+        extra_always_modules: set[str] | None = None,
     ) -> None:
         self._gateway = gateway
         self._history = history
@@ -204,6 +205,12 @@ class AgentOrchestrator:
         # сервис-команды модулей: (описание, обработчик); инъекция из app.py,
         # чтобы ядро не знало о модулях (границы docs/03)
         self._extra_commands = extra_commands or {}
+        # модули, чьи инструменты доступны модели всегда, даже при
+        # topic_scoped_tools (MCP-серверы, Sprint 9: у их тем нет наших маркеров).
+        # Держим ссылку как есть (а не `or set()`): MCP подключается фоново, и
+        # пустое на момент создания множество хаб пополнит позже — по этой же
+        # ссылке. Новый set() порвал бы связь и MCP-тулы не попадали бы в scope
+        self._extra_always = extra_always_modules if extra_always_modules is not None else set()
 
     async def process(self, msg: IncomingMessage, session: Session) -> Reply:
         # привязка инструментов к источнику (задача ↔ сообщение, Sprint 5)
@@ -238,7 +245,7 @@ class AgentOrchestrator:
 
         lowered = msg.text.lower()
         nudges: list[str] = []
-        allowed_modules: set[str] = set(ALWAYS_MODULES)
+        allowed_modules: set[str] = set(ALWAYS_MODULES) | self._extra_always
         for markers, nudge, modules in TOPIC_RULES:
             if any(marker in lowered for marker in markers):
                 nudges.append(nudge)
