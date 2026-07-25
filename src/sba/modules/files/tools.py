@@ -26,6 +26,15 @@ from sba.infra.config import FilesConfig
 from sba.modules.files.ops import FileOpsService
 from sba.modules.files.safety import NO_ROOTS_HINT, RootGuard
 
+# переиспользуем экстракторы индексатора: read_document читает Excel/PDF/DOCX тем
+# же кодом, что и фоновая индексация (один домен «извлечение текста из файла»)
+from sba.modules.indexer.extractors import ExtractError, extract
+
+# форматы, читаемые через экстрактор (бинарные документы); текстовые (.txt/.md/
+# .csv/код) по-прежнему читаются как есть, побайтово
+DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".xlsm"}
+EXTRACT_READ_TIMEOUT = 30.0  # потолок на разбор одного документа по запросу
+
 SCAN_LIMIT = 50_000  # предохранитель от обхода гигантских деревьев
 FIND_SHOWN = 30       # сколько путей кладём в ответ (потолок на объём → экономия токенов облака)
 FIND_COUNT_CAP = 200  # докуда считаем всего совпадений; дальше — «более N» (не гоним обход зря)
@@ -204,19 +213,44 @@ class FilesToolset:
                 return f"Файл не существует: {target}"
         if target.is_dir():
             return f"{target} — папка; используйте list_files"
+        if target.suffix.lower() in DOCUMENT_EXTENSIONS:
+            return await self._read_extracted(target)
         raw_bytes = await asyncio.to_thread(target.read_bytes)
         if b"\x00" in raw_bytes[:1024]:
             return (
-                f"{target.name} — не текстовый файл. Чтение PDF/DOCX/XLSX "
-                "появится в следующих версиях (RAG, Sprint 4)."
+                f"{target.name} — двоичный файл, прочитать как текст нельзя. "
+                "Excel/PDF/DOCX я читаю, а картинки, архивы и программы — нет."
             )
         text = raw_bytes.decode("utf-8", errors="replace")
+        return self._read_result(target, text)
+
+    async def _read_extracted(self, target: Path) -> str:
+        """Excel/PDF/DOCX → текст через общие экстракторы индексатора."""
+        try:
+            blocks = await asyncio.wait_for(
+                asyncio.to_thread(extract, target), timeout=EXTRACT_READ_TIMEOUT
+            )
+        except TimeoutError:
+            return f"{target.name}: чтение заняло слишком долго и было прервано."
+        except ExtractError as exc:
+            return f"Не удалось прочитать {target.name}: {exc}"
+        parts = [f"[{b.locator}]\n{b.text}" if b.locator else b.text for b in blocks]
+        text = "\n\n".join(parts).strip()
+        if not text:
+            return (
+                f"{target.name}: текст не извлёкся (пустой файл, либо скан/картинка "
+                "без распознавания — OCR появится позже)."
+            )
+        return self._read_result(target, text)
+
+    def _read_result(self, target: Path, text: str) -> str:
         limit = self._config.max_read_chars
         header = f"Файл: {target}\n\n"
         if len(text) > limit:
             return (
                 f"{header}{text[:limit]}\n"
-                f"…(показаны первые {limit} символов из {len(text)})"
+                f"…(показаны первые {limit} символов из {len(text)}; за полным "
+                "содержимым уточните нужный лист или раздел)"
             )
         return header + text
 
@@ -253,7 +287,8 @@ class FilesToolset:
             ),
             ToolSpec(
                 name="read_document",
-                description="Прочитать текстовый файл; можно указать только имя без пути",
+                description="Прочитать файл: текст (txt/md/csv/код) и документы "
+                "Excel/PDF/DOCX. Можно указать только имя без пути",
                 args_schema=PathArgs,
                 risk=RiskLevel.READ,
                 module="files",

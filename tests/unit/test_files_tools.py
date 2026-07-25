@@ -82,7 +82,27 @@ async def test_read_document_truncates(tmp_path: Path) -> None:
 async def test_read_binary_refused(tmp_path: Path) -> None:
     (tmp_path / "app.bin").write_bytes(b"\x00\x01\x02data")
     result = await make_toolset(tmp_path).read_document(PathArgs(path="app.bin"))
-    assert "не текстовый" in result
+    assert "двоичный файл" in result
+
+
+async def test_read_xlsx_via_extractor(tmp_path: Path) -> None:
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Контроль"
+    ws.append(["Регион", "Значение"])
+    ws.append(["Москва", 42])
+    wb.save(str(tmp_path / "отчёт.xlsx"))
+    result = await make_toolset(tmp_path).read_document(PathArgs(path="отчёт.xlsx"))
+    assert "лист «Контроль»" in result
+    assert "Москва" in result and "42" in result
+
+
+async def test_read_document_description_mentions_excel(tmp_path: Path) -> None:
+    # модель должна знать, что умеет читать Excel/PDF/DOCX (иначе сдастся сама)
+    specs = {s.name: s for s in make_toolset(tmp_path).build_tools()}
+    assert "Excel" in specs["read_document"].description
 
 
 async def test_find_files_recursive(tmp_path: Path) -> None:
