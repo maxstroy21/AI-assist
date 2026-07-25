@@ -186,6 +186,21 @@ async def test_read_bare_name_auto_found_in_subfolder(tmp_path: Path) -> None:
     assert str(nested / "заметка.md") in result  # видно, какой файл прочитан
 
 
+async def test_read_full_path_falls_back_to_name_search(tmp_path: Path) -> None:
+    """Полный путь не совпал точно (напр. другая юникод-нормализация кириллицы
+    или файл переехал) — read_document сам находит его по имени, а не заставляет
+    модель искать (жалоба владельца 2026-07-25)."""
+    import unicodedata
+
+    folder = tmp_path / "Сервис АТЗ"
+    folder.mkdir()
+    (folder / "отчёт.md").write_text("данные по региону", encoding="utf-8")
+    # тот же путь, но в NFD — точная проверка exists() промахнётся
+    nfd = unicodedata.normalize("NFD", str(folder / "отчёт.md"))
+    result = await make_toolset(tmp_path).read_document(PathArgs(path=nfd))
+    assert "данные по региону" in result
+
+
 async def test_read_bare_name_multiple_matches_asks_to_clarify(tmp_path: Path) -> None:
     for sub in ("один", "два"):
         folder = tmp_path / sub

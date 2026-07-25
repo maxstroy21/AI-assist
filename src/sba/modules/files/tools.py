@@ -15,6 +15,7 @@ import asyncio
 import fnmatch
 import os
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -118,7 +119,10 @@ class FilesToolset:
         total = 0
         scanned = 0
         deadline = time.monotonic() + SEARCH_TIME_BUDGET
-        pattern_lower = pattern.lower()
+        # NFC-нормализация: одни и те же кириллические буквы бывают записаны
+        # по-разному (составные/разложенные); без выравнивания имя с диска и
+        # маска от модели могут не совпасть побайтово
+        pattern_lower = unicodedata.normalize("NFC", pattern).lower()
         for root in self._roots:
             for dirpath, dirnames, filenames in os.walk(root):
                 if time.monotonic() > deadline:
@@ -128,7 +132,8 @@ class FilesToolset:
                     scanned += 1
                     if scanned > SCAN_LIMIT:
                         return matches, total, False
-                    if fnmatch.fnmatch(filename.lower(), pattern_lower):
+                    normalized = unicodedata.normalize("NFC", filename).lower()
+                    if fnmatch.fnmatch(normalized, pattern_lower):
                         total += 1
                         if len(matches) < keep:
                             matches.append(Path(dirpath) / filename)
@@ -194,23 +199,25 @@ class FilesToolset:
         raw = args.path.strip().strip("'\"")
         target = self._resolve(raw)
         if not target.exists():
-            # голое имя без пути — попробуем найти файл сами
-            if "/" not in raw and "\\" not in raw:
-                matches, _total, _complete = await asyncio.to_thread(self._search, raw, 5, 5)
-                if len(matches) == 1:
-                    target = matches[0]
-                elif matches:
-                    return (
-                        "Нашёл несколько файлов с таким именем — уточните путь:\n"
-                        + "\n".join(str(m) for m in matches)
-                    )
-                else:
-                    return (
-                        f"Файл {raw!r} не найден в разрешённых папках "
-                        f"({self._roots_summary()})"
-                    )
+            # Точный путь не совпал — ищем файл по ИМЕНИ в разрешённых папках,
+            # чтобы не заставлять модель искать вручную (жалоба владельца
+            # 2026-07-25: дал полный путь, а ассистент полез в list_files/
+            # find_files). Частая причина промаха точного пути — разная
+            # юникод-нормализация кириллицы в имени папки ('Сервис АТЗ').
+            name = raw.replace("\\", "/").rstrip("/").split("/")[-1]
+            matches, _total, _complete = await asyncio.to_thread(self._search, name, 5, 5)
+            if len(matches) == 1:
+                target = matches[0]
+            elif matches:
+                return (
+                    "Нашёл несколько файлов с таким именем — уточните путь:\n"
+                    + "\n".join(str(m) for m in matches)
+                )
             else:
-                return f"Файл не существует: {target}"
+                return (
+                    f"Файл не найден: {raw}. Проверьте путь или имя "
+                    f"(искал и по имени в разрешённых папках: {self._roots_summary()})"
+                )
         if target.is_dir():
             return f"{target} — папка; используйте list_files"
         if target.suffix.lower() in DOCUMENT_EXTENSIONS:
