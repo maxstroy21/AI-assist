@@ -30,6 +30,11 @@ from sba.modules.rag.interface import DocumentIndex
 log = structlog.get_logger(__name__)
 
 EXTRACT_TIMEOUT_SECONDS = 120.0  # всё внешнее обязано иметь таймаут
+# потолок на эмбеддинг одного файла: bge-m3 на CPU медленна, а при локальной
+# чат-модели ещё и конкурирует с ней за память — один файл не должен вешать
+# индексатор надолго (иначе health-монитор считает его зависшим). Превысили —
+# трактуем как временную недоступность модели: файл остаётся в очереди
+INDEX_EMBED_TIMEOUT_SECONDS = 300.0
 MAX_ATTEMPTS = 3
 QUEUE_BATCH = 20
 
@@ -210,7 +215,20 @@ class IndexerService:
         chunks = make_chunks(
             blocks, self._config.chunk_chars, self._config.chunk_overlap_chars
         )
-        count = await self._index.upsert_chunks(record.id, path_str, chunks)
+        self._beat()  # перед медленным эмбеддингом — сигнал жизни health-монитору
+        try:
+            count = await asyncio.wait_for(
+                self._index.upsert_chunks(record.id, path_str, chunks),
+                timeout=INDEX_EMBED_TIMEOUT_SECONDS,
+            )
+        except TimeoutError as exc:
+            # эмбеддинг не уложился (Ollama занята/конкурирует с чат-моделью за
+            # CPU) — не вина файла: как временная недоступность модели (LLMError),
+            # файл остаётся в очереди, попытки не жжём, индексатор продолжает жить
+            raise LLMError(
+                f"эмбеддинг {Path(path_str).name} не уложился в "
+                f"{INDEX_EMBED_TIMEOUT_SECONDS:.0f} с — модель занята"
+            ) from exc
         await self._catalog.mark_indexed(path_str, count)
         log.info("rag_file_indexed", path=path_str, chunks=count)
 

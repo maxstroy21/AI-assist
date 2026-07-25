@@ -132,6 +132,32 @@ async def test_deleted_file_removed_from_index(db: Database, tmp_path: Path) -> 
     assert await catalog.get(str(file)) is None
 
 
+async def test_slow_embed_times_out_and_keeps_file_in_queue(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Эмбеддинг одного файла завис (Ollama занята чат-моделью) — по таймауту
+    трактуем как временную недоступность: файл в очереди, попытки не сожжены,
+    индексатор не «висит» (health-алярм 2026-07-25)."""
+    import asyncio
+
+    import sba.modules.indexer.service as svc
+
+    monkeypatch.setattr(svc, "INDEX_EMBED_TIMEOUT_SECONDS", 0.05)
+
+    class SlowIndex(FakeIndex):
+        async def upsert_chunks(self, file_id, path, chunks):  # type: ignore[no-untyped-def]
+            await asyncio.sleep(1.0)  # дольше таймаута
+            return len(chunks)
+
+    source = tmp_path / "docs"
+    source.mkdir()
+    (source / "note.md").write_text("Заметка, эмбеддинг которой завис.", "utf-8")
+    indexer, catalog = make_indexer(db, source, SlowIndex())
+    await indexer.scan_once()
+    assert await indexer.process_queue() == 0     # ничего не проиндексировано
+    assert await catalog.queue_size() == 1        # файл ждёт, попытки целы
+
+
 async def test_llm_error_keeps_file_in_queue(db: Database, tmp_path: Path) -> None:
     source = tmp_path / "docs"
     source.mkdir()
