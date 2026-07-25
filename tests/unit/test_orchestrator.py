@@ -498,13 +498,26 @@ async def test_duplicate_tool_call_not_reexecuted(db: Database) -> None:
     assert any("повторный вызов" in m.content for m in third_call if m.role == "tool")
 
 
-async def test_iteration_limit(db: Database) -> None:
+async def test_iteration_limit_does_final_answer_pass(db: Database) -> None:
+    """Шаги исчерпаны, но модель на финальном проходе БЕЗ инструментов
+    отвечает по собранным данным — а не «не довёл дело до конца»."""
     call = [ToolCall(id="c", name="probe", arguments={"value": "x"})]
-    llm = FakeLLM(replies=[call, call, call])
+    llm = FakeLLM(replies=[call, call, "справка по собранным данным"])
     text = await collect(
         make_orchestrator(llm, db, tools=[probe_spec([])], max_tool_iterations=2)
     )
-    assert "лимита шагов" in text
+    assert "справка по собранным данным" in text
+    assert llm.seen_tools[-1] is None  # финальный проход шёл без инструментов
+
+
+async def test_iteration_limit_fallback_when_still_no_answer(db: Database) -> None:
+    """Если даже финальный проход не дал текста — честное сообщение."""
+    call = [ToolCall(id="c", name="probe", arguments={"value": "x"})]
+    llm = FakeLLM(replies=[call, call, call])  # и на финале снова вызов, не текст
+    text = await collect(
+        make_orchestrator(llm, db, tools=[probe_spec([])], max_tool_iterations=2)
+    )
+    assert "Не удалось сформулировать" in text
 
 
 # ── подтверждение destructive ────────────────────────────────────────────────

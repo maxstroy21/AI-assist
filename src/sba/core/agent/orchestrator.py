@@ -140,6 +140,14 @@ JSON_TEXT_REFUSAL = (
     "⚠️ Модель выдавала ответ служебным форматом вместо текста, поэтому я его не "
     "показываю. Повторите запрос или начните новый разговор: /new."
 )
+# Финальный проход без инструментов: шаги исчерпаны, но данные уже собраны —
+# просим модель ответить по ним, а не сдаваться «не довёл дело до конца»
+FINAL_ANSWER_NUDGE = (
+    "Достигнут предел обращений к инструментам. Больше их не вызывай — ответь "
+    "пользователю по-русски по данным, которые уже получены выше (результаты "
+    "инструментов в истории). Если данных не хватает, честно скажи, чего не "
+    "хватает, но инструменты не вызывай."
+)
 # Растяжка на фабрикацию вне принудительных тем: в ответе упомянуты пути или
 # файлы, хотя за весь ход не было ни одного реального вызова инструмента
 PATH_MENTION_RE = re.compile(r"[A-Za-z]:\\|\.(docx|xlsx|pdf|txt|md|log)\b")
@@ -510,11 +518,26 @@ class AgentOrchestrator:
                         ChatMessage(role="tool", tool_call_id=call.id, content=result.text)
                     )
 
-            yield (
-                f"{chr(10) if shown_any else ''}⚠️ Достиг лимита шагов "
-                f"({self._config.max_tool_iterations}) и не довёл дело до конца. "
-                "Попробуйте разбить задачу на части."
-            )
+            # Шаги исчерпаны, а модель всё звала инструменты (частое для слабой
+            # 3B: не сходится к ответу). Финальный проход БЕЗ инструментов —
+            # пусть ответит тем, что уже собрала, а не «не довёл дело до конца»
+            messages.append(ChatMessage(role="system", content=FINAL_ANSWER_NUDGE))
+            got_final = False
+            async for event in self._gateway.stream("chat", messages, tools=None):
+                if event.text:
+                    cleaned = strip_cjk(event.text)
+                    if cleaned:
+                        if not got_final and shown_any:
+                            yield "\n"
+                        shown_any = True
+                        got_final = True
+                        yield cleaned
+            if not got_final:
+                yield (
+                    f"{chr(10) if shown_any else ''}⚠️ Не удалось сформулировать "
+                    f"ответ за {self._config.max_tool_iterations} шагов. Попробуйте "
+                    "разбить задачу на части."
+                )
         except LLMError as exc:
             log.error("llm_failed", error=str(exc))
             yield f"{chr(10) if shown_any else ''}{self._llm_error_hint(exc)}"
