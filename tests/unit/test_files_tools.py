@@ -215,6 +215,25 @@ async def test_read_full_path_falls_back_to_name_search(tmp_path: Path) -> None:
     assert "данные по региону" in result
 
 
+async def test_read_full_path_disambiguates_duplicate_names(tmp_path: Path) -> None:
+    """Файлов с одним именем несколько, но дан ПОЛНЫЙ путь — читаем именно тот,
+    а не спрашиваем «уточните» (жалоба владельца 2026-07-25: два одноимённых
+    файла в Documents и Downloads)."""
+    import unicodedata
+
+    a = tmp_path / "Сервис АТЗ"
+    a.mkdir()
+    b = tmp_path / "Telegram"
+    b.mkdir()
+    (a / "отчёт.md").write_text("версия из документов", encoding="utf-8")
+    (b / "отчёт.md").write_text("версия из телеги", encoding="utf-8")
+    nfd = unicodedata.normalize("NFD", str(a / "отчёт.md"))  # точный путь промахнётся
+    result = await make_toolset(tmp_path).read_document(PathArgs(path=nfd))
+    assert "уточните" not in result.lower()
+    assert "версия из документов" in result
+    assert "версия из телеги" not in result
+
+
 async def test_read_bare_name_multiple_matches_asks_to_clarify(tmp_path: Path) -> None:
     for sub in ("один", "два"):
         folder = tmp_path / sub

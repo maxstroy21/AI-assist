@@ -214,6 +214,15 @@ class FilesToolset:
             # юникод-нормализация кириллицы в имени папки ('Сервис АТЗ').
             name = raw.replace("\\", "/").rstrip("/").split("/")[-1]
             matches, _total, _complete = await asyncio.to_thread(self._search, name, 5, 5)
+            if len(matches) > 1:
+                # файлов с таким именем несколько — но пользователь мог дать
+                # ПОЛНЫЙ путь: предпочтём совпадение по всему пути (сравнение в
+                # NFC, ведь точная exists()-проверка как раз и промахнулась)
+                wanted = unicodedata.normalize("NFC", str(target)).lower()
+                exact = [m for m in matches
+                         if unicodedata.normalize("NFC", str(m)).lower() == wanted]
+                if len(exact) == 1:
+                    matches = exact
             if len(matches) == 1:
                 target = matches[0]
             elif matches:
