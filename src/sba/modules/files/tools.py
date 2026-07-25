@@ -33,11 +33,11 @@ SEARCH_TIME_BUDGET = 20.0  # секунд: OneDrive/сетевые папки п
 
 
 class PathArgs(BaseModel):
-    path: str = Field(description="Путь к файлу или папке (внутри разрешённых папок)")
+    path: str = Field(description="Путь к файлу или папке")
 
 
 class ListArgs(BaseModel):
-    path: str = Field(description="Путь к папке (внутри разрешённых папок)")
+    path: str = Field(description="Путь к папке")
     pattern: str = Field(default="*", description="Маска имени, например *.pdf")
 
 
@@ -236,8 +236,8 @@ class FilesToolset:
         return [
             ToolSpec(
                 name="list_files",
-                description="Показать содержимое папки: файлы и подпапки с размерами "
-                f"и датами. path='.' покажет список разрешённых папок.{roots_hint}",
+                description="Содержимое папки. path='.' — список разрешённых "
+                f"папок.{roots_hint}",
                 args_schema=ListArgs,
                 risk=RiskLevel.READ,
                 module="files",
@@ -245,8 +245,7 @@ class FilesToolset:
             ),
             ToolSpec(
                 name="find_files",
-                description="Найти файл по имени или маске во всех разрешённых папках, "
-                "включая подпапки",
+                description="Найти файл по имени или маске в разрешённых папках",
                 args_schema=FindArgs,
                 risk=RiskLevel.READ,
                 module="files",
@@ -254,8 +253,7 @@ class FilesToolset:
             ),
             ToolSpec(
                 name="read_document",
-                description="Прочитать текстовый файл (txt, md, csv, код). Если задано "
-                "только имя без пути — файл ищется автоматически",
+                description="Прочитать текстовый файл; можно указать только имя без пути",
                 args_schema=PathArgs,
                 risk=RiskLevel.READ,
                 module="files",
@@ -263,7 +261,7 @@ class FilesToolset:
             ),
             ToolSpec(
                 name="delete_file",
-                description="Удалить файл или папку в корзину ОС (можно восстановить)",
+                description="Удалить файл или папку в корзину (обратимо)",
                 args_schema=PathArgs,
                 risk=RiskLevel.DESTRUCTIVE,
                 module="files",
