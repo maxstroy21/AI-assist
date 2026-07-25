@@ -14,12 +14,11 @@ FactType = Literal["person", "project", "decision", "preference", "fact"]
 
 class RememberArgs(BaseModel):
     type: FactType = Field(
-        description="person — о человеке; project — о проекте; decision — принятое "
-        "решение; preference — предпочтение владельца (стиль, вкусы); fact — прочее"
+        description="person — человек; project — проект; decision — решение; "
+        "preference — предпочтение владельца; fact — прочее"
     )
     subject: str = Field(
-        description="Кого или чего касается, кратко: 'Иван Петров', 'проект Экспедиция', "
-        "'стиль ответов'"
+        description="Кого/чего касается, кратко: 'Иван Петров', 'проект Экспедиция'"
     )
     content: str = Field(description="Само знание, 1–3 предложения")
 
@@ -84,8 +83,7 @@ def build_memory_tools(service: MemoryService) -> list[ToolSpec]:
         ),
         ToolSpec(
             name="recall_memory",
-            description="Что я знаю о теме или имени: факты из памяти, история "
-            "решений и прошлые разговоры",
+            description="Что известно о теме/имени: факты, решения, прошлые разговоры",
             args_schema=RecallArgs,
             risk=RiskLevel.READ,
             module="memory",

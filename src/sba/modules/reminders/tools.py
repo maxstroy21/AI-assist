@@ -14,7 +14,7 @@ from sba.modules.reminders.service import ReminderService
 from sba.modules.reminders.store import ReminderView
 
 WHEN_DESCRIPTION = (
-    "Когда напомнить, словами пользователя: 'завтра в 15:00', 'через час', "
+    "Когда напомнить, словами: 'завтра в 15:00', 'через час', "
     "'каждый вторник в 10'. Пусто — ближайшее утро"
 )
 

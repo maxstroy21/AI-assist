@@ -57,8 +57,8 @@ def build_rag_tools(
         ToolSpec(
             name="search_documents",
             description=(
-                "Семантический поиск по содержимому личных документов владельца "
-                "(PDF, DOCX, MD, TXT). Возвращает фрагменты с указанием файла и места"
+                "Поиск по содержимому документов (PDF/DOCX/XLSX/MD/TXT); "
+                "возвращает фрагменты с указанием файла"
             ),
             args_schema=SearchDocumentsArgs,
             risk=RiskLevel.READ,
