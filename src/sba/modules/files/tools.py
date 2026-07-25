@@ -83,8 +83,16 @@ class FilesToolset:
             return f"Папка не существует: {target}. Разрешённые папки: {self._roots_summary()}"
         if not target.is_dir():
             return f"{target} — это файл, а не папка"
+        pattern = args.pattern or "*"
+        # не target.glob(): его сопоставление чувствительно к юникод-нормализации
+        # кириллицы (маска '*Региональный*' может не совпасть с файлом на диске).
+        # Перебираем сами и сравниваем имена, приведённые к NFC
+        norm_pattern = unicodedata.normalize("NFC", pattern).lower()
         entries = sorted(
-            target.glob(args.pattern or "*"),
+            (
+                p for p in target.iterdir()
+                if fnmatch.fnmatch(unicodedata.normalize("NFC", p.name).lower(), norm_pattern)
+            ),
             key=lambda p: (p.is_file(), p.name.lower()),
         )
         if not entries:

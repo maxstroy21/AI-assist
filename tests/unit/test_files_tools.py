@@ -105,6 +105,20 @@ async def test_read_document_description_mentions_excel(tmp_path: Path) -> None:
     assert "Excel" in specs["read_document"].description
 
 
+async def test_list_files_mask_matches_across_unicode_normalization(tmp_path: Path) -> None:
+    """Маска с кириллицей находит файл, даже если его имя на диске в другой
+    юникод-нормализации (составные/разложенные буквы) — иначе поиск по маске
+    промахивался мимо реального файла (диагностика 2026-07-25)."""
+    import unicodedata
+
+    (tmp_path / unicodedata.normalize("NFD", "Региональный_отчёт.xlsx")).write_bytes(b"PK")
+    result = await make_toolset(tmp_path).list_files(
+        ListArgs(path=str(tmp_path), pattern="*Региональный*")
+    )
+    assert "нет ничего" not in result  # файл найден, а не «пусто по маске»
+    assert unicodedata.normalize("NFC", result).lower().count("региональный") >= 1
+
+
 async def test_find_files_recursive(tmp_path: Path) -> None:
     nested = tmp_path / "проекты" / "логи"
     nested.mkdir(parents=True)
