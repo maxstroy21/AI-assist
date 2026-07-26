@@ -36,19 +36,15 @@ runtimes:
   #   api_key: "${DEEPSEEK_API_KEY}"
 
 roles:
-  # Роль chat — облачный Groq (2026-07-24): qwen3.6-27b. Выбран за дневной
-  # минутный лимит 12K токенов — этого хватает на чтение документов (у
-  # qwen3-27b было всего 8K/мин, и чтение Excel не влезало → 429, 2026-07-25).
-  # Плата — дневной запас 100K (у qwen3 было 200K); счётчик обнуляется в
-  # полночь UTC (03:00 МСК). temperature 0.3 — как и раньше.
-  # ЛОКАЛЬНАЯ модель (2026-07-25): лимиты Groq на день выбиты — работаем на
-  # Ollama без облака. Медленнее и слабее, зато без лимитов и приватно; на
-  # запросах с инструментами держим topic_scoped_tools=true (короче промпт).
-  chat:       { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }
-  # Вернуться в облако Groq, когда обновится лимит (03:00 МСК): закомментируйте
-  # строку chat выше и раскомментируйте нужную:
-  # chat:     { runtime: groq, model: "llama-3.3-70b-versatile", temperature: 0.3 }  # 12K/мин, 100K/день
-  # chat:     { runtime: groq, model: "qwen/qwen3.6-27b", temperature: 0.3 }         # 8K/мин, 200K/день
+  # Роль chat — облачный Groq: llama-3.3-70b. Минутный лимит 12K токенов —
+  # хватает на чтение документов (у qwen3-27b было 8K/мин, и Excel не влезал →
+  # 429). Дневной запас 100K, обнуляется в полночь UTC (03:00 МСК).
+  chat:       { runtime: groq, model: "llama-3.3-70b-versatile", temperature: 0.3 }
+  # Дневной лимит Groq выбит и нужно работать без облака — на локальную модель
+  # (медленнее и слабее, зато без лимитов): закомментируйте строку chat выше и
+  # раскомментируйте эту:
+  # chat:     { runtime: ollama, model: "qwen2.5:3b-instruct", temperature: 0.3 }
+  # Другой облачный Groq: qwen/qwen3.6-27b (8K/мин, но 200K/день).
   # Ещё облачные варианты (раскомментируйте нужный рантайм выше, оставьте ОДНУ chat):
   # chat:     { runtime: anthropic, model: "claude-sonnet-5", max_tokens: 4096 }
   # chat:     { runtime: deepseek,  model: "deepseek-chat", temperature: 0.3 }
